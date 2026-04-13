@@ -426,7 +426,7 @@ where
         if norm_r > T::epsilon() {
             let g1 = _newton_raphson_genpowcone(norm_r, p, phi, &self.α, data.ψ);
 
-            gr.scalarop_from(|r| (g1 / norm_r) * r, &data.r);
+            gr.scalarop_from(|r| (g1 / norm_r) * r, r);
 
             for (gp, &α, &p) in izip!(gp.iter_mut(), &self.α, p) {
                 *gp = -(T::one() + α + α * g1 * norm_r) / p;
