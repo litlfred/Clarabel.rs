@@ -7,16 +7,21 @@ use crate::algebra::dense::BlasFloatT;
 
 use super::transcendental::{RealConst, RealSentinel, Transcendental};
 
-// Phase 2 of the BigRational backend:
-// `CoreFloatT` requires `Clone` rather than `Copy`. The originally-
-// proposed `Rc<BigRational>`-with-Copy-semantics newtype is not
-// implementable in safe Rust (`Rc<T>` has a `Drop` impl for the
-// refcount and so cannot itself be `Copy`). The rational backend
-// will use `Arc<BigRational>` (must be `Send + Sync`); the rest of
-// the solver gets `.clone()` insertions where it previously relied
-// on `Copy`. For `f64`/`f32` this is free at runtime: `Clone::clone`
-// on a `Copy` type compiles to the same register/memcpy move as a
-// `Copy` would, so existing IEEE benchmarks are unaffected.
+// Phase 2 of the BigRational backend (deferred):
+// `CoreFloatT` currently still requires `Copy`. The originally-proposed
+// `Rc<BigRational>`-with-Copy-semantics newtype is not implementable in
+// safe Rust (`Rc<T>` has a `Drop` impl for the refcount and so cannot
+// itself be `Copy`).  The selected resolution is to relax `Copy` to
+// `Clone` and add explicit `.clone()` insertions at by-value call
+// sites — a roughly-1000-error mechanical refactor concentrated in the
+// cone files (powcone/expcone/socone/genpowcone). It is deferred to a
+// follow-up commit so that the trait-split Phase 1 can land for review
+// on its own and the f64 baseline stays bisectable. The rational
+// backend will use `Arc<BigRational>` since `CoreFloatT: Send + Sync`.
+//
+// `vecmath.rs` already contains `.clone()`-style call patterns ahead of
+// the trait change; on `Copy` types the clones compile to the same
+// register/memcpy moves as before, so f64 numerics are unaffected.
 
 /// Core traits for internal floating point values.
 ///
@@ -38,7 +43,7 @@ pub trait CoreFloatT:
     + Num
     + NumAssign
     + Signed
-    + Clone
+    + Copy
     + PartialOrd
     + Default
     + FromPrimitive
