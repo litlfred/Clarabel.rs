@@ -1,0 +1,54 @@
+//! Exact-rational backend (`bigrational` feature).
+//!
+//! This module provides [`RationalReal`], a scalar type satisfying
+//! [`FloatT`](crate::algebra::FloatT) whose arithmetic is backed by
+//! arbitrary-precision `num_rational::BigRational` stored in a per-thread
+//! arena. LP/QP iterates are bit-exact rationals; SOCP/exp/pow barrier
+//! transcendentals (`sqrt`, `ln`, `exp`, `powf`) are computed at a
+//! configurable thread-local working precision via Newton/Taylor series.
+//!
+//! # Memory model
+//!
+//! `RationalReal` is a `Copy`-able 4-byte handle (`u32`) into the arena.
+//! Every arithmetic operation appends a fresh `BigRational` and returns a
+//! new handle. Memory grows monotonically during a solve. Call
+//! [`reset_arena`] between solves to reclaim it; all outstanding
+//! `RationalReal` handles invalidate at that point.
+//!
+//! # Send + Sync
+//!
+//! [`FloatT`](crate::algebra::FloatT) requires `Send + Sync`. The arena is
+//! per-thread, so a `RationalReal` produced on thread A is meaningless on
+//! thread B. We assert this with `unsafe impl Send + Sync` on
+//! `RationalReal`, with the documented invariant: **a `RationalReal` may
+//! only be dereferenced on the thread that produced it.** Within a single
+//! `solver.solve()` call (Clarabel's IPM is single-threaded for a given
+//! problem) this holds. Outer parallelism — running independent solves on
+//! independent threads, each with its own arena — is fully supported.
+//!
+//! Sending a `RationalReal` across threads in user code is a logic bug
+//! that this module cannot detect; users should not do it. The intended
+//! usage is: instantiate `Solver<RationalReal>`, run `solve()`, extract
+//! results via [`RationalReal::to_bigrational`] or
+//! [`RationalReal::into_pair`] before any thread-crossing.
+//!
+//! # Mutual exclusivity
+//!
+//! Cannot be combined with `sdp` or `faer-sparse`. Those features pin
+//! `T` to `f32`/`f64` for BLAS / `faer::RealField` operations.
+
+#[cfg(feature = "sdp")]
+compile_error!(
+    "the `bigrational` feature is mutually exclusive with `sdp` and `sdp-*` \
+     because SDP requires BLAS/LAPACK on f32/f64"
+);
+
+#[cfg(feature = "faer-sparse")]
+compile_error!(
+    "the `bigrational` feature is mutually exclusive with `faer-sparse` \
+     because faer requires `RealField` on f32/f64"
+);
+
+mod arena;
+
+pub use arena::{arena_len, reset_arena};

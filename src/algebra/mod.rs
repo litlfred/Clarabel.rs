@@ -29,6 +29,12 @@ pub(crate) use scalarmath::*;
 pub use transcendental::{RealConst, RealSentinel, Transcendental};
 pub(crate) use utils::*;
 
+// exact-rational backend (feature-gated)
+#[cfg(feature = "bigrational")]
+mod rational;
+#[cfg(feature = "bigrational")]
+pub use rational::{arena_len, reset_arena};
+
 // matrix implementations
 mod csc;
 pub use csc::*;
