@@ -5,9 +5,11 @@
 use super::arena;
 use num_bigint::BigInt;
 use num_rational::BigRational;
-use num_traits::{One, Zero};
+use num_traits::{FromPrimitive, Num, One, Signed, Zero};
 use std::cmp::Ordering;
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, Sub, SubAssign};
+use std::ops::{
+    Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign,
+};
 
 /// Exact-rational scalar handle.
 ///
@@ -175,6 +177,13 @@ impl DivAssign for RationalReal {
     }
 }
 
+impl RemAssign for RationalReal {
+    #[inline]
+    fn rem_assign(&mut self, rhs: Self) {
+        *self = *self % rhs;
+    }
+}
+
 // ============================================================
 // Comparisons — read both operands by reference
 // ============================================================
@@ -238,5 +247,144 @@ impl Default for RationalReal {
     #[inline]
     fn default() -> Self {
         Self::zero()
+    }
+}
+
+// ============================================================
+// num_traits::Num — required by CoreFloatT (via Num + NumAssign)
+// ============================================================
+
+/// Error returned by [`RationalReal::from_str_radix`] when the input
+/// cannot be parsed as a rational at the given radix.
+#[derive(Debug, Clone)]
+pub struct ParseRationalError(String);
+
+impl std::fmt::Display for ParseRationalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RationalReal parse error: {}", self.0)
+    }
+}
+
+impl std::error::Error for ParseRationalError {}
+
+impl Num for RationalReal {
+    type FromStrRadixErr = ParseRationalError;
+
+    /// Parse `"<numer>/<denom>"` or just `"<numer>"`. Both fields go
+    /// through `BigInt::from_str_radix`.
+    fn from_str_radix(s: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+        let (n, d) = match s.split_once('/') {
+            Some((ns, ds)) => (ns, ds),
+            None => (s, "1"),
+        };
+        let numer = BigInt::parse_bytes(n.as_bytes(), radix)
+            .ok_or_else(|| ParseRationalError(format!("invalid numerator: {n}")))?;
+        let denom = BigInt::parse_bytes(d.as_bytes(), radix)
+            .ok_or_else(|| ParseRationalError(format!("invalid denominator: {d}")))?;
+        if denom.is_zero() {
+            return Err(ParseRationalError("zero denominator".into()));
+        }
+        Ok(Self::from_pair(numer, denom))
+    }
+}
+
+// ============================================================
+// num_traits::Signed — abs / signum / is_positive / is_negative
+// ============================================================
+
+impl Signed for RationalReal {
+    #[inline]
+    fn abs(&self) -> Self {
+        let v = arena::with(self.0, |a| a.abs());
+        RationalReal::from_bigrational(v)
+    }
+
+    #[inline]
+    fn abs_sub(&self, other: &Self) -> Self {
+        if self <= other {
+            Self::zero()
+        } else {
+            *self - *other
+        }
+    }
+
+    #[inline]
+    fn signum(&self) -> Self {
+        let v = arena::with(self.0, |a| a.signum());
+        RationalReal::from_bigrational(v)
+    }
+
+    #[inline]
+    fn is_positive(&self) -> bool {
+        arena::with(self.0, |a| a.is_positive())
+    }
+
+    #[inline]
+    fn is_negative(&self) -> bool {
+        arena::with(self.0, |a| a.is_negative())
+    }
+}
+
+// ============================================================
+// num_traits::FromPrimitive — used by AsFloatT (T::from_usize etc)
+// ============================================================
+
+impl FromPrimitive for RationalReal {
+    fn from_i64(n: i64) -> Option<Self> {
+        Some(Self::from_pair(BigInt::from(n), BigInt::from(1)))
+    }
+    fn from_u64(n: u64) -> Option<Self> {
+        Some(Self::from_pair(BigInt::from(n), BigInt::from(1)))
+    }
+    fn from_i128(n: i128) -> Option<Self> {
+        Some(Self::from_pair(BigInt::from(n), BigInt::from(1)))
+    }
+    fn from_u128(n: u128) -> Option<Self> {
+        Some(Self::from_pair(BigInt::from(n), BigInt::from(1)))
+    }
+    fn from_isize(n: isize) -> Option<Self> {
+        Self::from_i64(n as i64)
+    }
+    fn from_usize(n: usize) -> Option<Self> {
+        Self::from_u64(n as u64)
+    }
+    fn from_i32(n: i32) -> Option<Self> {
+        Self::from_i64(n as i64)
+    }
+    fn from_u32(n: u32) -> Option<Self> {
+        Self::from_u64(n as u64)
+    }
+    /// `f32` is converted exactly into `(mantissa * 2^exp_bias)` form so
+    /// that, e.g., `from_f32(0.1)` is the *exact* rational the IEEE
+    /// representation 0x3DCCCCCD denotes (not the round-trip back to 1/10).
+    fn from_f32(f: f32) -> Option<Self> {
+        BigRational::from_f32(f).map(Self::from_bigrational)
+    }
+    /// `f64` is converted exactly. See [`Self::from_f32`].
+    fn from_f64(f: f64) -> Option<Self> {
+        BigRational::from_f64(f).map(Self::from_bigrational)
+    }
+}
+
+// ============================================================
+// From conversions for ergonomics
+// ============================================================
+
+impl From<BigRational> for RationalReal {
+    fn from(v: BigRational) -> Self {
+        Self::from_bigrational(v)
+    }
+}
+
+impl From<i64> for RationalReal {
+    fn from(n: i64) -> Self {
+        Self::from_pair(BigInt::from(n), BigInt::from(1))
+    }
+}
+
+impl From<f64> for RationalReal {
+    fn from(f: f64) -> Self {
+        Self::from_f64(f)
+            .unwrap_or_else(|| panic!("cannot convert non-finite f64 ({f}) to RationalReal"))
     }
 }
