@@ -51,6 +51,8 @@ compile_error!(
 
 mod arena;
 mod precision;
+mod real;
 
 pub use arena::{arena_len, reset_arena};
 pub use precision::{precision_bits, set_precision_bits, with_precision};
+pub use real::RationalReal;
