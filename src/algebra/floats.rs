@@ -7,6 +7,17 @@ use crate::algebra::dense::BlasFloatT;
 
 use super::transcendental::{RealConst, RealSentinel, Transcendental};
 
+// Decision (Phase 2 of the BigRational backend): keep `Copy` as a
+// requirement on `CoreFloatT`. Rather than relax to `Clone` and
+// audit hundreds of by-value sites, the rational backend wraps
+// `num_rational::BigRational` in an `Rc<...>`-backed newtype so that
+// `Copy`-by-value semantics are preserved (cheap pointer copy +
+// copy-on-write on mutation). This keeps the solver source unchanged
+// at the cost of some indirection in the rational arithmetic; if that
+// indirection turns out to be the bottleneck, switching to `Clone`
+// is a separate, mechanical refactor that does not affect the public
+// trait surface.
+
 /// Core traits for internal floating point values.
 ///
 /// This trait defines a subset of bounds for `FloatT`, which is preferred
