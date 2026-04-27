@@ -43,7 +43,7 @@ pub trait CoreFloatT:
     + Num
     + NumAssign
     + Signed
-    + Copy
+    + Clone
     + PartialOrd
     + Default
     + FromPrimitive
@@ -64,7 +64,7 @@ impl<T> CoreFloatT for T where
         + Num
         + NumAssign
         + Signed
-        + Copy
+        + Clone
         + PartialOrd
         + Default
         + FromPrimitive
