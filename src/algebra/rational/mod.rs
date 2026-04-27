@@ -54,7 +54,19 @@ mod display;
 mod precision;
 mod real;
 mod sentinel;
+mod transcendental;
 
 pub use arena::{arena_len, reset_arena};
 pub use precision::{precision_bits, set_precision_bits, with_precision};
 pub use real::RationalReal;
+
+// Compile-time assertion: RationalReal satisfies CoreFloatT and (because
+// neither sdp nor faer-sparse can be enabled with bigrational) FloatT.
+#[allow(dead_code)]
+fn _assert_rational_real_is_floatt() {
+    fn assert_floatt<T: crate::algebra::FloatT>() {}
+    assert_floatt::<RationalReal>();
+}
+
+#[cfg(test)]
+mod tests;
