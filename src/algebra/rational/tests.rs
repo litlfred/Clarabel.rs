@@ -127,3 +127,77 @@ fn rational_max_bits_grows_with_repeated_division() {
     );
     reset_arena();
 }
+
+#[test]
+fn rational_max_arena_bits_caps_growth() {
+    // With cap on at 256 bits, repeated 1/3 divisions stay bounded
+    // (3^-50 needs only ~80 denom bits, so 256 leaves plenty of margin
+    // and the capped value matches the true 3^-50 to ulp in f64).
+    reset_arena();
+    set_max_arena_bits(Some(256));
+    let mut x = RationalReal::from_i64(1).unwrap();
+    let three = RationalReal::from_i64(3).unwrap();
+    for _ in 0..50 {
+        x = x / three;
+    }
+    let bits = x.max_bits();
+    assert!(
+        bits <= 256,
+        "max_arena_bits(256) should bound denom+numer; got {bits} bits after 50 divisions"
+    );
+    // Result is approximately 3^-50; check the f64 view.
+    let approx = x.to_f64();
+    let expected = 3f64.powi(-50);
+    let rel_err = (approx - expected).abs() / expected.abs();
+    assert!(
+        rel_err < 1e-15,
+        "capped result {approx} should match 3^-50 = {expected} to ~ulp; rel_err = {rel_err}"
+    );
+    set_max_arena_bits(None);
+    reset_arena();
+}
+
+#[test]
+fn rational_aggressive_cap_rounds_to_zero_when_value_smaller_than_ulp() {
+    // Documents the boundary: at 32-bit cap, anything smaller than
+    // ~2^-32 rounds to exactly 0. This is intentional — the cap is
+    // a precision floor, not a magnitude floor.
+    reset_arena();
+    set_max_arena_bits(Some(32));
+    let small = RationalReal::from_pair(BigInt::from(1), BigInt::from(1u64) << 50);
+    // small = 2^-50, far below 2^-32 ulp at 32-bit precision -> rounds to 0.
+    let bumped = small + RationalReal::zero(); // any op triggers cap
+    assert_eq!(bumped.to_f64(), 0.0);
+    set_max_arena_bits(None);
+    reset_arena();
+}
+
+#[test]
+fn rational_with_max_arena_bits_scope_guard_restores_on_panic() {
+    reset_arena();
+    let original = max_arena_bits();
+    let _ = std::panic::catch_unwind(|| {
+        with_max_arena_bits(Some(32), || {
+            assert_eq!(max_arena_bits(), Some(32));
+            panic!("oops");
+        });
+    });
+    assert_eq!(
+        max_arena_bits(),
+        original,
+        "with_max_arena_bits guard must restore the previous value even on panic"
+    );
+    reset_arena();
+}
+
+#[test]
+fn rational_one_third_plus_one_third_plus_one_third_still_one_in_exact_mode() {
+    // Default mode (no cap) preserves the headline guarantee that
+    // 1/3 + 1/3 + 1/3 == 1 exactly.
+    reset_arena();
+    set_max_arena_bits(None); // explicit, even though it's the default
+    let third = RationalReal::from_pair(BigInt::from(1), BigInt::from(3));
+    let three_thirds = third + third + third;
+    assert_eq!(three_thirds, RationalReal::one());
+    reset_arena();
+}

@@ -10,26 +10,29 @@
 //!   cargo run --no-default-features --features serde,bigrational \
 //!             --example lp_rational --release
 //!
-//! # Runtime warning
+//! # Two precision modes
 //!
-//! Even on this 2-d LP, expect **many minutes per IPM iteration** with
-//! the current implementation. Basic `+`/`-`/`*`/`/` on
-//! `RationalReal` are exact and unbounded; per-iteration rational
-//! denominators grow geometrically and each subsequent op gets slower.
-//! This is intrinsic to exact rational LP solving — practical
-//! exact-rational solvers use iterative refinement (compute in floats,
-//! refine to exact rationals only at termination), or specialized
-//! rational simplex/ellipsoid methods, neither of which Clarabel does.
+//! The example below sets `set_max_arena_bits(Some(256))`, which engages
+//! the inner-loop precision-capping mode: every arithmetic op rounds its
+//! result to `m / 2^256` if it would otherwise exceed 256 numerator or
+//! denominator bits. This bounds the per-op cost so the IPM runs in
+//! seconds rather than minutes. Precision is still ~77 decimal digits —
+//! 5× f64 — so the 1e-8 tolerance set below is met with massive margin.
 //!
-//! Despite the speed cost, the iter-print line shows the IPM converging
-//! exactly as in the f64 baseline (same `pcost`/`gap`/`pres`/`dres`
-//! magnitudes per iteration, modulo the lossy f64-LowerExp rendering),
-//! demonstrating the trait wiring is correct end-to-end.
+//! To see the unbounded **exact** mode (which is the headline guarantee
+//! of the `bigrational` backend — `1/3 + 1/3 + 1/3 == 1` exactly),
+//! comment out the `set_max_arena_bits` line. Expect many minutes per
+//! IPM iteration on this problem because BigRational denominators grow
+//! geometrically without the cap; this is intrinsic to exact rational
+//! LP solving (practical exact-LP packages mitigate via iterative
+//! refinement or specialized rational simplex methods, neither of
+//! which Clarabel does).
 //!
-//! For QOU-scale workloads the recommended path is the planned MPFR
-//! backend (Phase 8), which gives high-precision floats with bounded
-//! denominators. The `bigrational` backend is for small problems where
-//! bit-exactness of the iterates matters more than speed.
+//! For QOU-scale workloads the planned MPFR backend (Phase 8) will give
+//! high-precision floats with bounded denominators in a more direct
+//! way. The `bigrational` backend with `max_arena_bits` is the
+//! "high-precision rational" middle ground: rationals when they fit,
+//! rounded-to-precision-p when they don't.
 
 use clarabel::algebra::*;
 use clarabel::solver::*;
@@ -50,6 +53,14 @@ fn main() {
     // Pure LP doesn't actually consume this — only barrier transcendentals
     // do — but it's the right place to demonstrate the knob.
     set_precision_bits(128);
+
+    // Engage inner-loop precision capping so the IPM runs in seconds,
+    // not minutes. At 256 bits ≈ 77 decimal digits, the cap is ~5×
+    // f64's precision — far in excess of the 1e-8 tolerance we use
+    // below — but bounded enough that BigRational arithmetic doesn't
+    // blow up geometrically. Comment this out to see the unbounded
+    // exact-mode behaviour (correct but minutes per iteration).
+    set_max_arena_bits(Some(256));
 
     // Reset the per-thread arena so the example doesn't inherit any
     // state from a prior invocation.

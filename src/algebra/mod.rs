@@ -34,7 +34,8 @@ pub(crate) use utils::*;
 mod rational;
 #[cfg(feature = "bigrational")]
 pub use rational::{
-    arena_len, precision_bits, reset_arena, set_precision_bits, with_precision, RationalReal,
+    arena_len, max_arena_bits, precision_bits, reset_arena, set_max_arena_bits,
+    set_precision_bits, with_max_arena_bits, with_precision, RationalReal,
 };
 
 // matrix implementations

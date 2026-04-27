@@ -50,6 +50,7 @@ compile_error!(
 );
 
 mod arena;
+mod cap;
 mod display;
 mod precision;
 mod real;
@@ -57,7 +58,10 @@ mod sentinel;
 mod transcendental;
 
 pub use arena::{arena_len, reset_arena};
-pub use precision::{precision_bits, set_precision_bits, with_precision};
+pub use precision::{
+    max_arena_bits, precision_bits, set_max_arena_bits, set_precision_bits, with_max_arena_bits,
+    with_precision,
+};
 pub use real::RationalReal;
 
 // Compile-time assertion: RationalReal satisfies CoreFloatT and (because

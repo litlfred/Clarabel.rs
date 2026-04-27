@@ -3,6 +3,7 @@
 //! See `super` (mod.rs) for the design rationale and Send + Sync invariant.
 
 use super::arena;
+use super::cap::maybe_cap;
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, Num, One, Signed, Zero};
@@ -100,7 +101,7 @@ impl Add for RationalReal {
     #[inline]
     fn add(self, rhs: Self) -> Self {
         let v = arena::with2(self.0, rhs.0, |a, b| a + b);
-        RationalReal::from_bigrational(v)
+        RationalReal::from_bigrational(maybe_cap(v))
     }
 }
 
@@ -109,7 +110,7 @@ impl Sub for RationalReal {
     #[inline]
     fn sub(self, rhs: Self) -> Self {
         let v = arena::with2(self.0, rhs.0, |a, b| a - b);
-        RationalReal::from_bigrational(v)
+        RationalReal::from_bigrational(maybe_cap(v))
     }
 }
 
@@ -118,7 +119,7 @@ impl Mul for RationalReal {
     #[inline]
     fn mul(self, rhs: Self) -> Self {
         let v = arena::with2(self.0, rhs.0, |a, b| a * b);
-        RationalReal::from_bigrational(v)
+        RationalReal::from_bigrational(maybe_cap(v))
     }
 }
 
@@ -127,7 +128,7 @@ impl Div for RationalReal {
     #[inline]
     fn div(self, rhs: Self) -> Self {
         let v = arena::with2(self.0, rhs.0, |a, b| a / b);
-        RationalReal::from_bigrational(v)
+        RationalReal::from_bigrational(maybe_cap(v))
     }
 }
 
@@ -136,7 +137,7 @@ impl Rem for RationalReal {
     #[inline]
     fn rem(self, rhs: Self) -> Self {
         let v = arena::with2(self.0, rhs.0, |a, b| a % b);
-        RationalReal::from_bigrational(v)
+        RationalReal::from_bigrational(maybe_cap(v))
     }
 }
 
@@ -144,6 +145,7 @@ impl Neg for RationalReal {
     type Output = Self;
     #[inline]
     fn neg(self) -> Self {
+        // Neg never grows numerator/denominator bits, so no cap needed.
         let v = arena::with(self.0, |a| -a);
         RationalReal::from_bigrational(v)
     }

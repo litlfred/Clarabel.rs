@@ -19,29 +19,13 @@
 //! denominators bounded.
 
 use super::arena;
+use super::cap::round_to_pow2_denominator as round_to_precision;
 use super::precision::precision_bits;
 use super::real::RationalReal;
 use crate::algebra::transcendental::Transcendental;
 use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, One, Signed, ToPrimitive, Zero};
-
-/// Round a `BigRational` to the form `m / 2^p`. Bounded denominator
-/// (always 2^p) keeps Newton/Taylor iterations from blowing up. Error
-/// is at most `2^-p / 2`, i.e. 0.5 ulp at working precision.
-fn round_to_precision(r: &BigRational, p: u32) -> BigRational {
-    let two_p: BigInt = BigInt::one() << (p as usize);
-    let n = r.numer() * &two_p;
-    let d = r.denom();
-    // Round to nearest, ties away from zero: m = (n + sign(n) * d/2) / d
-    let half: BigInt = d / 2;
-    let rounded = if n.is_negative() {
-        (n - half) / d
-    } else {
-        (n + half) / d
-    };
-    BigRational::new(rounded, two_p)
-}
 
 /// `2^-p` as a [`BigRational`]. Used as the convergence tolerance.
 fn tolerance(p: u32) -> BigRational {
