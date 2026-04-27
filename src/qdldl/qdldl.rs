@@ -786,17 +786,17 @@ fn _invperm(p: &[usize]) -> Result<Vec<usize>, QDLDLError> {
 // p must be a valid permutation vector
 // in both cases for safety
 
-pub(crate) fn permute<T: Copy>(x: &mut [T], b: &[T], p: &[usize]) {
+pub(crate) fn permute<T: Clone>(x: &mut [T], b: &[T], p: &[usize]) {
     debug_assert!(p.is_empty() || *p.iter().max().unwrap() < x.len());
     unsafe {
-        zip(p, x).for_each(|(p, x)| *x = *b.get_unchecked(*p));
+        zip(p, x).for_each(|(p, x)| *x = (*b.get_unchecked(*p)).clone());
     }
 }
 
-pub(crate) fn ipermute<T: Copy>(x: &mut [T], b: &[T], p: &[usize]) {
+pub(crate) fn ipermute<T: Clone>(x: &mut [T], b: &[T], p: &[usize]) {
     debug_assert!(p.is_empty() || *p.iter().max().unwrap() < x.len());
     unsafe {
-        zip(p, b).for_each(|(p, b)| *x.get_unchecked_mut(*p) = *b);
+        zip(p, b).for_each(|(p, b)| *x.get_unchecked_mut(*p) = (*b).clone());
     }
 }
 
