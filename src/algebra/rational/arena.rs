@@ -17,6 +17,11 @@ thread_local! {
     /// Per-thread storage. `Vec` (not `HashMap`) because handles are dense
     /// `u32` indices so a Vec lookup is O(1) with no hashing.
     static ARENA: RefCell<Vec<BigRational>> = const { RefCell::new(Vec::new()) };
+    /// Per-thread monotonic counter; bumped by every [`reset_arena`] call.
+    /// Caches that hold arena handles (sentinel, const, ...) snapshot this
+    /// value at populate time and re-derive when it changes — robust even
+    /// if the arena is reset and immediately repopulated by other code.
+    static ARENA_GEN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// Push a `BigRational` into the thread-local arena and return its handle.
@@ -77,9 +82,21 @@ pub(crate) fn with2<R>(a: u32, b: u32, f: impl FnOnce(&BigRational, &BigRational
 /// is a panic in debug builds (out-of-bounds index) or undefined behaviour
 /// in release builds (unrelated `BigRational` returned at the recycled slot).
 ///
+/// Also bumps the arena-generation counter so that handle caches
+/// (sentinel, const, ...) see the change and re-derive their entries.
+///
 /// Call this between solves to recover memory.
 pub fn reset_arena() {
     ARENA.with(|cell| cell.borrow_mut().clear());
+    ARENA_GEN.with(|g| g.set(g.get().wrapping_add(1)));
+}
+
+/// Current arena generation — incremented by every [`reset_arena`] call.
+/// Caches that hold handles store this at populate time and re-derive
+/// when it changes.
+#[inline]
+pub(crate) fn arena_generation() -> u64 {
+    ARENA_GEN.with(|g| g.get())
 }
 
 /// Current arena size, in entries (not bytes). Useful for diagnostics

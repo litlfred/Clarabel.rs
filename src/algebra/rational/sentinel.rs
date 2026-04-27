@@ -32,24 +32,19 @@ use std::cell::Cell;
 // Tag bits stored in the high two bits of the u32 handle would let us
 // represent infinity / -infinity / nan without occupying arena slots,
 // but that constrains arena size. Cleaner: each thread stores the
-// handles in thread-local Cells, lazily populated.
-//
-// We never reset these on `reset_arena()` — they get re-pushed lazily.
-// The flag is just whether the current ARENA generation has been seeded.
-// Simpler: make these not `Option` but instead always re-fetch by value
-// when needed, since the arena owns them.
+// handles in thread-local Cells, lazily populated. Cache invalidation
+// piggybacks on arena_generation() — each reset_arena() bumps that
+// counter so we re-derive on next access.
 
 thread_local! {
-    /// Sentinel for +infinity. We store the actual u32 handle, but
-    /// invalidate-on-reset by carrying a generation counter.
     static SENTINELS: Cell<Option<Sentinels>> = const { Cell::new(None) };
 }
 
 #[derive(Copy, Clone)]
 struct Sentinels {
-    /// arena length when the sentinels were populated; if it's smaller
-    /// than the current handles, they've been wiped by reset_arena().
-    populated_at: u32,
+    /// `arena_generation()` when the sentinels were populated.
+    /// If it changes, the arena was reset and the handles are stale.
+    generation: u64,
     pos_inf: u32,
     neg_inf: u32,
     nan: u32,
@@ -57,28 +52,22 @@ struct Sentinels {
 
 fn ensure_sentinels() -> Sentinels {
     if let Some(s) = SENTINELS.with(|c| c.get()) {
-        // If the arena was reset, all four handles are now < arena_len();
-        // by the contract of arena::reset, accessing them is UB. We detect
-        // by re-checking that the handle is still less than current
-        // arena length. If not, repopulate.
-        if s.populated_at <= arena::arena_len() as u32 {
+        if s.generation == arena::arena_generation() {
             return s;
         }
     }
-    // Push sentinels. They are large fixed magnitudes so comparisons
-    // with any "reasonable" finite value resolve correctly. We use 2^256
-    // for infinity (much larger than any solver iterate at sane scales)
-    // and a distinguishable poison-value for nan.
+    // Push sentinels. Large fixed magnitudes so comparisons with any
+    // "reasonable" finite value resolve correctly. 2^256 for ±infinity
+    // (much larger than any solver iterate at sane scales). nan is
+    // currently 0/1 and detected by handle equality only — see the
+    // TODO in mod.rs about a tag-bits scheme that would also catch
+    // arithmetic involving nan.
     let big: BigInt = BigInt::from(1u8) << 256u32;
     let pos_inf = arena::push(BigRational::new(big.clone(), BigInt::one()));
     let neg_inf = arena::push(BigRational::new(-big, BigInt::one()));
-    // nan: a unique rational not equal to any finite computed value;
-    // we use 0/1 with a separate flag would be cleaner, but for now
-    // mark nan as 0 and rely on is_nan() being checked first. This
-    // is a known weakness; see TODO below.
     let nan = arena::push(BigRational::new(BigInt::zero(), BigInt::one()));
     let s = Sentinels {
-        populated_at: arena::arena_len() as u32,
+        generation: arena::arena_generation(),
         pos_inf,
         neg_inf,
         nan,
@@ -167,14 +156,15 @@ impl RealSentinel for RationalReal {
 
 thread_local! {
     /// Per-thread cache of the irrational constants. Invalidated when
-    /// the working precision changes (we re-derive them lazily on each
-    /// call after checking the cached precision).
+    /// the working precision changes OR the arena generation changes
+    /// (reset_arena()).
     static CONST_CACHE: Cell<Option<ConstCache>> = const { Cell::new(None) };
 }
 
 #[derive(Copy, Clone)]
 struct ConstCache {
     bits: u32,
+    generation: u64,
     pi: u32,
     sqrt_2: u32,
     frac_1_sqrt_2: u32,
@@ -182,8 +172,9 @@ struct ConstCache {
 
 fn const_cache() -> ConstCache {
     let bits = precision_bits();
+    let gen = arena::arena_generation();
     if let Some(c) = CONST_CACHE.with(|c| c.get()) {
-        if c.bits == bits {
+        if c.bits == bits && c.generation == gen {
             return c;
         }
     }
@@ -211,6 +202,7 @@ fn const_cache() -> ConstCache {
     };
     let cache = ConstCache {
         bits,
+        generation: gen,
         pi: arena::push(pi),
         sqrt_2: arena::push(sqrt_2),
         frac_1_sqrt_2: arena::push(frac_1_sqrt_2),

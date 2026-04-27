@@ -8,6 +8,9 @@ use num_bigint::BigInt;
 use num_rational::BigRational;
 use num_traits::{FromPrimitive, One, Signed, Zero};
 
+// Bring `arena::get` into scope for the cache-invalidation test.
+use super::arena;
+
 #[test]
 fn rational_arena_smoke() {
     reset_arena();
@@ -187,6 +190,39 @@ fn rational_with_max_arena_bits_scope_guard_restores_on_panic() {
         original,
         "with_max_arena_bits guard must restore the previous value even on panic"
     );
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinel_cache_invalidates_on_reset_arena() {
+    // Regression test for the flaw flagged in Gemini's PR review:
+    // if reset_arena() runs and then enough new entries are pushed to
+    // reach the old sentinel handles, the cached sentinels would
+    // otherwise return stale handles pointing at unrelated values.
+    // The generation-counter check now invalidates them on reset.
+    reset_arena();
+    let inf1 = <RationalReal as RealSentinel>::infinity();
+    let inf1_value = arena::get(inf1.0);
+
+    // Force the arena to grow well past the sentinel slots,
+    // then reset and re-fetch infinity. The handle must point to
+    // a +inf-magnitude value, not whatever happened to land at
+    // the old slot.
+    for _ in 0..10 {
+        let _ = RationalReal::from_i64(42).unwrap();
+    }
+    reset_arena();
+    // Push some unrelated values so the slot 0/1/2 are now occupied
+    // by other things.
+    let a = RationalReal::from_i64(7).unwrap();
+    let b = RationalReal::from_i64(11).unwrap();
+    let _ = a + b;
+    let _ = a * b;
+
+    let inf2 = <RationalReal as RealSentinel>::infinity();
+    assert!(inf2.is_infinite(), "infinity() after reset must still be infinite");
+    let inf2_value = arena::get(inf2.0);
+    assert_eq!(inf1_value, inf2_value);
     reset_arena();
 }
 
