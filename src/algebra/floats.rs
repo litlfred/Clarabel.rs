@@ -7,16 +7,14 @@ use crate::algebra::dense::BlasFloatT;
 
 use super::transcendental::{RealConst, RealSentinel, Transcendental};
 
-// Decision (Phase 2 of the BigRational backend): keep `Copy` as a
-// requirement on `CoreFloatT`. Rather than relax to `Clone` and
-// audit hundreds of by-value sites, the rational backend wraps
-// `num_rational::BigRational` in an `Rc<...>`-backed newtype so that
-// `Copy`-by-value semantics are preserved (cheap pointer copy +
-// copy-on-write on mutation). This keeps the solver source unchanged
-// at the cost of some indirection in the rational arithmetic; if that
-// indirection turns out to be the bottleneck, switching to `Clone`
-// is a separate, mechanical refactor that does not affect the public
-// trait surface.
+// Phase 2 of the BigRational backend (open):
+// `CoreFloatT` currently requires `Copy`. The originally-proposed
+// `Rc<BigRational>`-with-Copy-semantics newtype is not implementable
+// in safe Rust (`Rc<T>` has a `Drop` impl for the refcount and so
+// cannot itself be `Copy`).  The selected approach is to relax `Copy`
+// to `Clone` and add explicit `.clone()` insertions at by-value call
+// sites. That refactor is landed in a follow-up commit so that the
+// trait-decoupling change here can be reviewed on its own.
 
 /// Core traits for internal floating point values.
 ///
@@ -39,7 +37,6 @@ pub trait CoreFloatT:
     + NumAssign
     + Signed
     + Copy
-    + Clone
     + PartialOrd
     + Default
     + FromPrimitive
@@ -61,7 +58,6 @@ impl<T> CoreFloatT for T where
         + NumAssign
         + Signed
         + Copy
-        + Clone
         + PartialOrd
         + Default
         + FromPrimitive
@@ -85,10 +81,15 @@ impl<T> CoreFloatT for T where
 cfg_if::cfg_if! {
     if #[cfg(feature="sdp")] {
         /// A marker trait implemented on types supported by BLAS (i.e. f32 and f64)
-        /// when the package is compiled with the "sdp" feature using a BLAS/LAPACK library
+        /// when the package is compiled with the "sdp" feature using a BLAS/LAPACK library.
+        ///
+        /// Pulls in `NumCast` and `ToPrimitive` because BLAS/SDP code paths use
+        /// `T::from(usize)` and `value.to_i32()` (e.g. for LAPACK workspace sizing
+        /// and SVD truncation tolerances). These bounds are vacuous for the only
+        /// types `BlasFloatT` is implemented on (`f32`, `f64`).
         #[doc(hidden)]
-        pub trait MaybeBlasFloatT : BlasFloatT {}
-        impl<T> MaybeBlasFloatT for T where T: BlasFloatT {}
+        pub trait MaybeBlasFloatT : BlasFloatT + num_traits::NumCast + num_traits::ToPrimitive {}
+        impl<T> MaybeBlasFloatT for T where T: BlasFloatT + num_traits::NumCast + num_traits::ToPrimitive {}
     }
     else {
         #[doc(hidden)]
