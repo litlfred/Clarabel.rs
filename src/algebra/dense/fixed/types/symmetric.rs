@@ -86,8 +86,11 @@ impl<const S: usize, T: FloatT> DenseMatrixMut<T> for DenseMatrixSymN<S, T> {
 
 impl<const S: usize, T: FloatT> DenseMatrixSymN<S, T> {
     pub fn zeros() -> Self {
+        // For RationalReal-style backends, T::zero() pushes a fresh
+        // arena entry per call; one-call + clone is S-1 entries cheaper.
+        let zero = T::zero();
         Self {
-            data: std::array::from_fn(|_| T::zero()),
+            data: std::array::from_fn(|_| zero.clone()),
         }
     }
 

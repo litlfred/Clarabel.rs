@@ -387,9 +387,14 @@ fn _factor<T: FloatT>(
     logical: bool,
 ) -> Result<(), QDLDLError> {
     if logical {
-        L.nzval.iter_mut().for_each(|x| *x = T::one());
-        D.iter_mut().for_each(|x| *x = T::one());
-        Dinv.iter_mut().for_each(|x| *x = T::one());
+        // For RationalReal-style backends, T::one() pushes a fresh
+        // arena entry per call; one-call + clone is N-1 entries cheaper
+        // per fill. set() from VectorMath would do the same but isn't
+        // in scope on these slices in the qdldl crate.
+        let one = T::one();
+        L.nzval.iter_mut().for_each(|x| *x = one.clone());
+        D.iter_mut().for_each(|x| *x = one.clone());
+        Dinv.iter_mut().for_each(|x| *x = one.clone());
     }
 
     // factor using QDLDL C style converted code
@@ -509,8 +514,10 @@ fn _factor_inner<T: FloatT>(
     // in each column of L, the next available space
     // to start is just the first space in the column
     y_markers.fill(QDLDL_UNUSED);
-    y_vals.iter_mut().for_each(|x| *x = T::zero());
-    D.iter_mut().for_each(|x| *x = T::zero());
+    // One T::zero() + clone-fill instead of N independent zeros.
+    let zero = T::zero();
+    y_vals.iter_mut().for_each(|x| *x = zero.clone());
+    D.iter_mut().for_each(|x| *x = zero.clone());
     next_colspace.copy_from_slice(&Lp[0..Lp.len() - 1]);
 
     if !logical_factor {

@@ -86,8 +86,11 @@ impl<const S: usize, T: FloatT> DenseMatrixN<S, T> {
         assert!(Self::N == x.len());
         assert!(Self::N == y.len());
 
+        // One T::zero() + clone-fill rather than N independent zeros
+        // (the rational backend allocates per T::zero()).
+        let zero = T::zero();
         for yi in y.iter_mut() {
-            *yi = T::zero();
+            *yi = zero.clone();
         }
         // column major order, but it probably doesn't matter
         for c in 0..Self::N {
@@ -144,8 +147,11 @@ impl<const S: usize, T: FloatT> DenseMatrixMut<T> for DenseMatrixN<S, T> {
 
 impl<const S: usize, T: FloatT> DenseMatrixN<S, T> {
     pub fn zeros() -> Self {
+        // For RationalReal-style backends, T::zero() pushes a fresh
+        // arena entry per call; one-call + clone is S-1 entries cheaper.
+        let zero = T::zero();
         Self {
-            data: std::array::from_fn(|_| T::zero()),
+            data: std::array::from_fn(|_| zero.clone()),
         }
     }
 }

@@ -142,8 +142,11 @@ where
 {
     pub fn set_identity(&mut self) {
         assert!(self.is_square());
+        // For RationalReal-style backends, T::zero() pushes a fresh
+        // arena entry per call; one-call + clone via `set` is cheaper.
+        let zero = T::zero();
         for x in self.data_mut().iter_mut() {
-            *x = T::zero();
+            *x = zero.clone();
         }
         for i in 0..self.ncols() {
             self[(i, i)] = T::one();

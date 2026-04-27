@@ -126,16 +126,18 @@ impl<T: FloatT> VectorMath<T> for [T] {
     //2-norm of elementwise product self.*v
     fn norm_scaled(&self, v: &[T]) -> T {
         assert_eq!(self.len(), v.len());
-        let products: Vec<T> = izip!(self, v).map(|(yi, vi)| yi.clone() * vi.clone()).collect();
-        stable_norm(products.iter())
+        // `T: Borrow<T>`, so we can pass owned values (each from a
+        // single .clone() pair) directly to stable_norm without a Vec
+        // intermediate. Was per-call heap-alloc on f64 builds; matters
+        // even more for RationalReal where the Vec<RationalReal>
+        // intermediate would push N extra arena entries.
+        stable_norm(izip!(self, v).map(|(yi, vi)| yi.clone() * vi.clone()))
     }
 
     // 2-norm of (self + α.dz)
     fn norm_shifted(&self, dz: &[T], α: T) -> T {
-        let shifted: Vec<T> = izip!(self, dz)
-            .map(|(zi, dzi)| zi.clone() + α.clone() * dzi.clone())
-            .collect();
-        stable_norm(shifted.iter())
+        // See `norm_scaled` — pass the mapped iterator directly.
+        stable_norm(izip!(self, dz).map(move |(zi, dzi)| zi.clone() + α.clone() * dzi.clone()))
     }
 
     // Returns infinity norm
