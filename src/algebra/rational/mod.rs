@@ -50,6 +50,7 @@ compile_error!(
 );
 
 mod arena;
+mod display;
 mod precision;
 mod real;
 
