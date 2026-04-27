@@ -7,14 +7,16 @@ use crate::algebra::dense::BlasFloatT;
 
 use super::transcendental::{RealConst, RealSentinel, Transcendental};
 
-// Phase 2 of the BigRational backend (open):
-// `CoreFloatT` currently requires `Copy`. The originally-proposed
-// `Rc<BigRational>`-with-Copy-semantics newtype is not implementable
-// in safe Rust (`Rc<T>` has a `Drop` impl for the refcount and so
-// cannot itself be `Copy`).  The selected approach is to relax `Copy`
-// to `Clone` and add explicit `.clone()` insertions at by-value call
-// sites. That refactor is landed in a follow-up commit so that the
-// trait-decoupling change here can be reviewed on its own.
+// Phase 2 of the BigRational backend:
+// `CoreFloatT` requires `Clone` rather than `Copy`. The originally-
+// proposed `Rc<BigRational>`-with-Copy-semantics newtype is not
+// implementable in safe Rust (`Rc<T>` has a `Drop` impl for the
+// refcount and so cannot itself be `Copy`). The rational backend
+// will use `Arc<BigRational>` (must be `Send + Sync`); the rest of
+// the solver gets `.clone()` insertions where it previously relied
+// on `Copy`. For `f64`/`f32` this is free at runtime: `Clone::clone`
+// on a `Copy` type compiles to the same register/memcpy move as a
+// `Copy` would, so existing IEEE benchmarks are unaffected.
 
 /// Core traits for internal floating point values.
 ///
@@ -36,7 +38,7 @@ pub trait CoreFloatT:
     + Num
     + NumAssign
     + Signed
-    + Copy
+    + Clone
     + PartialOrd
     + Default
     + FromPrimitive
