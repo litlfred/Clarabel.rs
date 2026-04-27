@@ -50,5 +50,7 @@ compile_error!(
 );
 
 mod arena;
+mod precision;
 
 pub use arena::{arena_len, reset_arena};
+pub use precision::{precision_bits, set_precision_bits, with_precision};

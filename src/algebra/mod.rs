@@ -33,7 +33,9 @@ pub(crate) use utils::*;
 #[cfg(feature = "bigrational")]
 mod rational;
 #[cfg(feature = "bigrational")]
-pub use rational::{arena_len, reset_arena};
+pub use rational::{
+    arena_len, precision_bits, reset_arena, set_precision_bits, with_precision,
+};
 
 // matrix implementations
 mod csc;
