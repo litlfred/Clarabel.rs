@@ -9,6 +9,27 @@
 //! Run:
 //!   cargo run --no-default-features --features serde,bigrational \
 //!             --example lp_rational --release
+//!
+//! # Runtime warning
+//!
+//! Even on this 2-d LP, expect **many minutes per IPM iteration** with
+//! the current implementation. Basic `+`/`-`/`*`/`/` on
+//! `RationalReal` are exact and unbounded; per-iteration rational
+//! denominators grow geometrically and each subsequent op gets slower.
+//! This is intrinsic to exact rational LP solving — practical
+//! exact-rational solvers use iterative refinement (compute in floats,
+//! refine to exact rationals only at termination), or specialized
+//! rational simplex/ellipsoid methods, neither of which Clarabel does.
+//!
+//! Despite the speed cost, the iter-print line shows the IPM converging
+//! exactly as in the f64 baseline (same `pcost`/`gap`/`pres`/`dres`
+//! magnitudes per iteration, modulo the lossy f64-LowerExp rendering),
+//! demonstrating the trait wiring is correct end-to-end.
+//!
+//! For QOU-scale workloads the recommended path is the planned MPFR
+//! backend (Phase 8), which gives high-precision floats with bounded
+//! denominators. The `bigrational` backend is for small problems where
+//! bit-exactness of the iterates matters more than speed.
 
 use clarabel::algebra::*;
 use clarabel::solver::*;
