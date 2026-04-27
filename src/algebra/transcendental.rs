@@ -122,6 +122,9 @@ pub trait RealSentinel: Sized {
     fn is_nan(self) -> bool;
     fn is_finite(self) -> bool;
     fn is_infinite(self) -> bool;
+    /// Sign-bit predicate: true for negative numbers and IEEE -0.
+    /// On non-IEEE backends without signed zero, equivalent to `self < 0`.
+    fn is_sign_negative(self) -> bool;
     fn min(self, other: Self) -> Self;
     fn max(self, other: Self) -> Self;
 }
@@ -162,6 +165,10 @@ impl<T: Float> RealSentinel for T {
     #[inline]
     fn is_infinite(self) -> bool {
         Float::is_infinite(self)
+    }
+    #[inline]
+    fn is_sign_negative(self) -> bool {
+        Float::is_sign_negative(self)
     }
     #[inline]
     fn min(self, other: Self) -> Self {
