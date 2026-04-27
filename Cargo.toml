@@ -197,6 +197,11 @@ name = "box"
 path = "examples/rust/example_box.rs"
 
 [[example]]
+name = "lp_rational"
+path = "examples/rust/example_lp_rational.rs"
+required-features = ["bigrational"]
+
+[[example]]
 name = "callback"
 path = "examples/rust/example_callback.rs"
 
