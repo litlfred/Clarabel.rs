@@ -127,8 +127,8 @@ where
         //for inf values that were not in a reduced cone
         //this is not considered part of the "presolve", so
         //can always happen regardless of user settings
-        let infbound = crate::get_infinity().as_T();
-        b_new.scalarop(|x| T::min(x, infbound));
+        let infbound: T = crate::get_infinity().as_T();
+        b_new.scalarop(|x| T::min(x, infbound.clone()));
 
         // this ensures m is the *reduced* size m
         let (m, n) = A_new.size();
@@ -166,24 +166,24 @@ where
     }
 
     pub(crate) fn get_normq(&mut self) -> T {
-        if let Some(norm) = self.normq {
-            norm
+        if let Some(norm) = self.normq.as_ref() {
+            norm.clone()
         } else {
             let dinv = &self.equilibration.dinv;
-            let cinv = T::recip(self.equilibration.c);
+            let cinv = T::recip(self.equilibration.c.clone());
             let norm = self.q.norm_inf_scaled(dinv) * cinv;
-            self.normq = Some(norm);
+            self.normq = Some(norm.clone());
             norm
         }
     }
 
     pub(crate) fn get_normb(&mut self) -> T {
-        if let Some(norm) = self.normb {
-            norm
+        if let Some(norm) = self.normb.as_ref() {
+            norm.clone()
         } else {
             let einv = &self.equilibration.einv;
             let norm = self.b.norm_inf_scaled(einv);
-            self.normb = Some(norm);
+            self.normb = Some(norm.clone());
             norm
         }
     }
@@ -248,8 +248,8 @@ where
         // note that P may be triu, but it shouldn't matter
         let (P, A, q, b) = (&mut data.P, &mut data.A, &mut data.q, &mut data.b);
 
-        let scale_min = settings.equilibrate_min_scaling;
-        let scale_max = settings.equilibrate_max_scaling;
+        let scale_min = settings.equilibrate_min_scaling.clone();
+        let scale_max = settings.equilibrate_max_scaling.clone();
 
         // perform scaling operations for a fixed number of steps
         for _ in 0..settings.equilibrate_max_iter {
@@ -263,11 +263,19 @@ where
             ework.rsqrt();
 
             // bound the cumulative scaling
-            for (dwork, &d) in izip!(dwork.iter_mut(), d.iter()) {
-                *dwork = T::clip(dwork, scale_min / d, scale_max / d);
+            for (dwork, d) in izip!(dwork.iter_mut(), d.iter()) {
+                *dwork = T::clip(
+                    dwork,
+                    scale_min.clone() / d.clone(),
+                    scale_max.clone() / d.clone(),
+                );
             }
-            for (ework, &e) in izip!(ework.iter_mut(), e.iter()) {
-                *ework = T::clip(ework, scale_min / e, scale_max / e);
+            for (ework, e) in izip!(ework.iter_mut(), e.iter()) {
+                *ework = T::clip(
+                    ework,
+                    scale_min.clone() / e.clone(),
+                    scale_max.clone() / e.clone(),
+                );
             }
 
             // Scale the problem data and update the
@@ -286,11 +294,16 @@ where
             if mean_col_norm_P != T::zero() && inf_norm_q != T::zero() {
                 let scale_cost = T::max(inf_norm_q, mean_col_norm_P);
                 let ctmp = T::recip(scale_cost);
-                let ctmp = T::clip(&ctmp, scale_min / equil.c, scale_max / equil.c);
+                let equil_c = equil.c.clone();
+                let ctmp = T::clip(
+                    &ctmp,
+                    scale_min.clone() / equil_c.clone(),
+                    scale_max.clone() / equil_c,
+                );
 
                 // scale the penalty terms and overall scaling
-                P.scale(ctmp);
-                q.scale(ctmp);
+                P.scale(ctmp.clone());
+                q.scale(ctmp.clone());
                 equil.c *= ctmp;
             }
         } //end Ruiz scaling loop
