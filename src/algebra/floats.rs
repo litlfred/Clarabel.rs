@@ -43,7 +43,7 @@ pub trait CoreFloatT:
     + Num
     + NumAssign
     + Signed
-    + Copy
+    + Clone
     + PartialOrd
     + Default
     + FromPrimitive

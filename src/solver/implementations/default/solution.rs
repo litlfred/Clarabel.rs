@@ -79,13 +79,13 @@ where
             self.obj_val = T::nan();
             self.obj_val_dual = T::nan();
         } else {
-            self.obj_val = info.cost_primal;
-            self.obj_val_dual = info.cost_dual;
+            self.obj_val = info.cost_primal.clone();
+            self.obj_val_dual = info.cost_dual.clone();
         }
 
         self.iterations = info.iterations;
-        self.r_prim = info.res_primal;
-        self.r_dual = info.res_dual;
+        self.r_prim = info.res_primal.clone();
+        self.r_dual = info.res_dual.clone();
 
         // unscale the variables to get a solution
         // to the internal problem as we solved it

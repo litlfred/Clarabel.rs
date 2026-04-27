@@ -86,12 +86,14 @@ impl<const S: usize, T: FloatT> DenseMatrixN<S, T> {
         assert!(Self::N == x.len());
         assert!(Self::N == y.len());
 
-        y.fill(T::zero());
+        for yi in y.iter_mut() {
+            *yi = T::zero();
+        }
         // column major order, but it probably doesn't matter
         for c in 0..Self::N {
-            let xc = x[c];
+            let xc = x[c].clone();
             for r in 0..Self::N {
-                y[r] += self[(r, c)] * xc;
+                y[r] = y[r].clone() + self[(r, c)].clone() * xc.clone();
             }
         }
     }

@@ -89,7 +89,7 @@ pub fn make_cone<T: FloatT>(cone: &SupportedConeT<T>) -> SupportedCone<T> {
         SupportedConeT::ZeroConeT(dim) => ZeroCone::<T>::new(*dim).into(),
         SupportedConeT::SecondOrderConeT(dim) => SecondOrderCone::<T>::new(*dim).into(),
         SupportedConeT::ExponentialConeT() => ExponentialCone::<T>::new().into(),
-        SupportedConeT::PowerConeT(α) => PowerCone::<T>::new(*α).into(),
+        SupportedConeT::PowerConeT(α) => PowerCone::<T>::new(α.clone()).into(),
         SupportedConeT::GenPowerConeT(α, dim2) => {
             GenPowerCone::<T>::new((*α).clone(), *dim2).into()
         }
