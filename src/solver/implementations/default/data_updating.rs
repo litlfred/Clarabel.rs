@@ -372,14 +372,15 @@ where
         vscale: &[T],
         cscale: Option<T>,
     ) -> Result<(), SparseFormatError> {
-        for (&idx, &value) in self.clone() {
+        for (&idx, value) in self.clone() {
             if idx >= v.len() {
                 return Err(SparseFormatError::IncompatibleDimension);
             }
-            if let Some(c) = cscale {
-                v[idx] = value * vscale[idx] * c;
+            let vs: T = Clone::clone(&vscale[idx]);
+            if let Some(c) = cscale.clone() {
+                v[idx] = value.clone() * vs * c;
             } else {
-                v[idx] = value * vscale[idx];
+                v[idx] = value.clone() * vs;
             }
         }
         Ok(())

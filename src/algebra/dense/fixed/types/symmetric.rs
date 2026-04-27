@@ -87,18 +87,20 @@ impl<const S: usize, T: FloatT> DenseMatrixMut<T> for DenseMatrixSymN<S, T> {
 impl<const S: usize, T: FloatT> DenseMatrixSymN<S, T> {
     pub fn zeros() -> Self {
         Self {
-            data: [T::zero(); S],
+            data: std::array::from_fn(|_| T::zero()),
         }
     }
 
     pub fn scaled_from(&mut self, c: T, B: &Self) {
         for i in 0..S {
-            self.data[i] = c * B.data[i];
+            self.data[i] = c.clone() * B.data[i].clone();
         }
     }
 
     pub fn copy_from(&mut self, src: &Self) {
-        self.data.copy_from_slice(&src.data);
+        for (d, s) in self.data.iter_mut().zip(src.data.iter()) {
+            *d = s.clone();
+        }
     }
 }
 
@@ -111,7 +113,7 @@ where
         let mut A = Self::zeros((n, n));
         for i in 0..n {
             for j in 0..n {
-                A[(i, j)] = B[(i, j)];
+                A[(i, j)] = B[(i, j)].clone();
             }
         }
         A
@@ -139,7 +141,7 @@ where
                 //read from upper triangle
                 for c in 0..Self::N {
                     for r in 0..=c {
-                        A[(r, c)] = B.src[(r, c)];
+                        A[(r, c)] = B.src[(r, c)].clone();
                     }
                 }
             }
@@ -147,7 +149,7 @@ where
                 //read from lower triangle
                 for c in 0..Self::N {
                     for r in c..Self::N {
-                        A[(r, c)] = B.src[(r, c)];
+                        A[(r, c)] = B.src[(r, c)].clone();
                     }
                 }
             }
