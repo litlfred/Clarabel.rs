@@ -79,6 +79,15 @@ python = [
 # compile with faer supernodal solver option
 faer-sparse = ["dep:faer", "dep:faer-traits"]
 
+# experimental exact-rational backend for LP/QP. Adds a `RationalReal`
+# scalar type satisfying `FloatT`, with arithmetic backed by
+# arbitrary-precision `num_rational::BigRational` stored in a thread-local
+# arena (`RationalReal` itself is a `u32` arena handle and is `Copy`).
+# Mutually exclusive with `sdp` and `faer-sparse` (those features pin
+# `T` to f32/f64). LP/QP iterates are bit-exact rationals; SOCP/exp/pow
+# barrier transcendentals are rounded to a thread-local working precision.
+bigrational = ["dep:num-rational", "dep:num-bigint"]
+
 # various pardiso options
 pardiso-panua = ["pardiso-wrapper/panua"]
 pardiso-mkl = ["pardiso-wrapper/mkl"]
@@ -135,9 +144,20 @@ optional = true
 # 3rd party sparse LDL solvers
 # -------------------------------
 
+[dependencies.num-rational]
+version = "0.4"
+default-features = false
+features = ["num-bigint"]
+optional = true
+
+[dependencies.num-bigint]
+version = "0.4"
+default-features = false
+optional = true
+
 [dependencies.faer]
 version = "0.21.9"
-optional = true 
+optional = true
 
 [dependencies.faer-traits]
 version = "0.21.5"
