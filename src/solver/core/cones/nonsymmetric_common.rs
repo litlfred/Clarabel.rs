@@ -96,8 +96,8 @@ where
         let de2 = H_dual.quad_form(&zt, &zt) - three * μt * μt;
 
         // use the primal-dual scaling
-        if T::abs(de1) > T::sqrt(T::epsilon()) &&      // too close to central path
-           T::abs(de2) > T::epsilon()          &&      // others for numerical stability
+        if de1.abs() > T::sqrt(T::epsilon()) &&      // too close to central path
+           de2.abs() > T::epsilon()          &&      // others for numerical stability
            dot_sz > T::zero()                  &&
            dot_δsz > T::zero()
         {
@@ -207,8 +207,8 @@ where
         let dx = -f0(x) / dfdx;
 
         if (dx < T::epsilon())
-            || (T::abs(dx / x) < T::sqrt(T::epsilon()))
-            || (T::abs(dfdx) < T::epsilon())
+            || ((dx / x).abs() < T::sqrt(T::epsilon()))
+            || (dfdx.abs() < T::epsilon())
         {
             break;
         }

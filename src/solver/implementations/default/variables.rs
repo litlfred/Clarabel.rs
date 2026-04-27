@@ -60,7 +60,7 @@ where
     type SE = DefaultSettings<T>;
 
     fn calc_mu(&mut self, residuals: &DefaultResiduals<T>, cones: &CompositeCone<T>) -> T {
-        let denom = T::from(cones.degree() + 1).unwrap();
+        let denom = T::from_usize(cones.degree() + 1).unwrap();
         (residuals.dot_sz + self.τ * self.κ) / denom
     }
 

@@ -1,9 +1,11 @@
 #![allow(non_snake_case)]
-use num_traits::{Float, FloatConst, FromPrimitive, NumAssign};
+use num_traits::{FromPrimitive, Num, NumAssign, Signed};
 use std::fmt::{Debug, Display, LowerExp};
 
 #[cfg(feature = "sdp")]
 use crate::algebra::dense::BlasFloatT;
+
+use super::transcendental::{RealConst, RealSentinel, Transcendental};
 
 /// Core traits for internal floating point values.
 ///
@@ -12,19 +14,31 @@ use crate::algebra::dense::BlasFloatT;
 /// `FloatT` is additionally restricted to f32/f64 types supported by BLAS.
 /// When the `faer-sparse` feature is enabled, `FloatT` is additionally
 /// restricted to types implementing `RealField` from the `faer` crate.
+///
+/// Note: `Float`/`FloatConst` are not required directly. Instead the solver
+/// requires the smaller [`Transcendental`], [`RealConst`] and [`RealSentinel`]
+/// trait split, which is satisfied via blanket impls for any IEEE float
+/// (`f32`, `f64`) and is also implementable for non-IEEE backends such as
+/// `RationalReal` (exact rational) and a future MPFR backend.
 pub trait CoreFloatT:
     'static
     + Send
     + Sync
-    + Float
-    + FloatConst
+    + Num
     + NumAssign
+    + Signed
+    + Copy
+    + Clone
+    + PartialOrd
     + Default
     + FromPrimitive
     + Display
     + LowerExp
     + Debug
     + Sized
+    + Transcendental
+    + RealConst
+    + RealSentinel
 {
 }
 
@@ -32,15 +46,21 @@ impl<T> CoreFloatT for T where
     T: 'static
         + Send
         + Sync
-        + Float
-        + FloatConst
+        + Num
         + NumAssign
+        + Signed
+        + Copy
+        + Clone
+        + PartialOrd
         + Default
         + FromPrimitive
         + Display
         + LowerExp
         + Debug
         + Sized
+        + Transcendental
+        + RealConst
+        + RealSentinel
 {
 }
 
@@ -92,7 +112,10 @@ cfg_if::cfg_if! {
 /// enabled then it should be possible to compile Clarabel to support any any other
 /// floating point type provided that it satisfies the trait bounds of `CoreFloatT`.
 ///
-/// `FloatT` relies on [`num_traits`](num_traits) for most of its constituent trait bounds.
+/// `FloatT` is built from a small split of supertraits ([`Transcendental`],
+/// [`RealConst`], [`RealSentinel`]) plus the standard `num_traits` arithmetic
+/// hierarchy, rather than `num_traits::Float`, so non-IEEE backends (e.g.
+/// the `bigrational` feature) can also satisfy it.
 pub trait FloatT: CoreFloatT + MaybeBlasFloatT + MaybeFaerFloatT {}
 impl<T> FloatT for T where T: CoreFloatT + MaybeBlasFloatT + MaybeFaerFloatT {}
 

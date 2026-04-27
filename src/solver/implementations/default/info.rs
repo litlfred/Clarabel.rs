@@ -165,11 +165,11 @@ where
             residuals.rx.norm_scaled(dinv) * τinv * cinv / T::max(T::one(), normq + normx + normz);
 
         // absolute and relative gaps
-        self.gap_abs = T::abs(self.cost_primal - self.cost_dual);
+        self.gap_abs = (self.cost_primal - self.cost_dual).abs();
         self.gap_rel = self.gap_abs
             / T::max(
                 T::one(),
-                T::min(T::abs(self.cost_primal), T::abs(self.cost_dual)),
+                T::min(self.cost_primal.abs(), self.cost_dual.abs()),
             );
 
         // κ/τ ratio (scaled)

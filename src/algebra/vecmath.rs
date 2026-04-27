@@ -148,17 +148,17 @@ impl<T: FloatT> VectorMath<T> for [T] {
     //inf-norm of elementwise product self.*v
     fn norm_inf_scaled(&self, v: &Self) -> T {
         assert_eq!(self.len(), v.len());
-        zip(self, v).fold(T::zero(), |acc, (&x, &y)| T::max(acc, T::abs(x * y)))
+        zip(self, v).fold(T::zero(), |acc, (&x, &y)| T::max(acc, (x * y).abs()))
     }
 
     //
     fn norm_one_scaled(&self, v: &Self) -> T {
-        zip(self, v).fold(T::zero(), |acc, (&x, &y)| acc + T::abs(x * y))
+        zip(self, v).fold(T::zero(), |acc, (&x, &y)| acc + (x * y).abs())
     }
 
     // max absolute difference (used for unit testing)
     fn norm_inf_diff(&self, b: &[T]) -> T {
-        zip(self, b).fold(T::zero(), |acc, (x, y)| T::max(acc, T::abs(*x - *y)))
+        zip(self, b).fold(T::zero(), |acc, (x, y)| T::max(acc, (*x - *y).abs()))
     }
 
     fn minimum(&self) -> T {

@@ -54,7 +54,7 @@ impl<T: FloatT> MatrixMath<T> for CscMatrix<T> {
                 .iter()
                 .take(self.colptr[i + 1])
                 .skip(self.colptr[i])
-                .fold(*v, |m, &nzval| T::max(m, T::abs(nzval)));
+                .fold(*v, |m, &nzval| T::max(m, nzval.abs()));
         }
     }
 
@@ -68,7 +68,7 @@ impl<T: FloatT> MatrixMath<T> for CscMatrix<T> {
 
         for i in 0..norms.len() {
             for j in self.colptr[i]..self.colptr[i + 1] {
-                let tmp = T::abs(self.nzval[j]);
+                let tmp = self.nzval[j].abs();
                 let r = self.rowval[j];
                 norms[i] = T::max(norms[i], tmp);
                 norms[r] = T::max(norms[r], tmp);
@@ -85,7 +85,7 @@ impl<T: FloatT> MatrixMath<T> for CscMatrix<T> {
         assert_eq!(self.rowval.len(), *self.colptr.last().unwrap());
 
         for (row, val) in zip(&self.rowval, &self.nzval) {
-            norms[*row] = T::max(norms[*row], T::abs(*val));
+            norms[*row] = T::max(norms[*row], val.abs());
         }
     }
 }

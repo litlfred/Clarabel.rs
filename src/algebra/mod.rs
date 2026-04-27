@@ -17,6 +17,7 @@ mod math_traits;
 mod matrix_traits;
 mod matrix_types;
 mod scalarmath;
+mod transcendental;
 mod utils;
 mod vecmath;
 pub use error_types::*;
@@ -25,6 +26,7 @@ pub use math_traits::*;
 pub use matrix_traits::*;
 pub(crate) use matrix_types::*;
 pub(crate) use scalarmath::*;
+pub use transcendental::{RealConst, RealSentinel, Transcendental};
 pub(crate) use utils::*;
 
 // matrix implementations
