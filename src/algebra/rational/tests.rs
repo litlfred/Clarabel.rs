@@ -270,26 +270,22 @@ fn rational_with_max_arena_bits_scope_guard_restores_on_panic() {
 }
 
 #[test]
-fn rational_sentinel_cache_invalidates_on_reset_arena() {
-    // Regression test for the flaw flagged in Gemini's PR review:
-    // if reset_arena() runs and then enough new entries are pushed to
-    // reach the old sentinel handles, the cached sentinels would
-    // otherwise return stale handles pointing at unrelated values.
-    // The generation-counter check now invalidates them on reset.
+fn rational_sentinel_handle_is_arena_independent() {
+    // After the bit-tagging redesign, sentinels are encoded purely in
+    // the top two bits of the u32 handle and consume no arena slots.
+    // The handle is a compile-time constant: it is identical before
+    // and after reset_arena(), and unaffected by intervening pushes.
     reset_arena();
     let inf1 = <RationalReal as RealSentinel>::infinity();
-    let inf1_value = arena::get(inf1.0);
+    assert!(inf1.is_infinite() && !inf1.is_finite());
 
-    // Force the arena to grow well past the sentinel slots,
-    // then reset and re-fetch infinity. The handle must point to
-    // a +inf-magnitude value, not whatever happened to land at
-    // the old slot.
+    // Push a bunch of unrelated values to grow the arena, reset, push
+    // more, and re-fetch infinity. The bit pattern must be identical
+    // and the predicate must still hold.
     for _ in 0..10 {
         let _ = RationalReal::from_i64(42).unwrap();
     }
     reset_arena();
-    // Push some unrelated values so the slot 0/1/2 are now occupied
-    // by other things.
     let a = RationalReal::from_i64(7).unwrap();
     let b = RationalReal::from_i64(11).unwrap();
     let _ = a + b;
@@ -297,8 +293,10 @@ fn rational_sentinel_cache_invalidates_on_reset_arena() {
 
     let inf2 = <RationalReal as RealSentinel>::infinity();
     assert!(inf2.is_infinite(), "infinity() after reset must still be infinite");
-    let inf2_value = arena::get(inf2.0);
-    assert_eq!(inf1_value, inf2_value);
+    assert_eq!(
+        inf1.0, inf2.0,
+        "sentinel handles are pure tag bits and must be identical across resets"
+    );
     reset_arena();
 }
 
@@ -331,3 +329,208 @@ fn rational_one_third_plus_one_third_plus_one_third_still_one_in_exact_mode() {
     assert_eq!(three_thirds, RationalReal::one());
     reset_arena();
 }
+
+// ============================================================
+// Sentinel bit-tagging propagation tests.
+//
+// These verify the three correctness issues flagged by Gemini in the
+// PR-#1 review of the original handle-equality sentinel design:
+//
+// 1. Range — no finite arena value can ever exceed +infinity or be
+//    below -infinity, regardless of magnitude.
+// 2. Propagation — sentinel inputs survive arithmetic instead of
+//    devolving back into finite handles.
+// 3. Predicates — is_finite / is_infinite / is_nan operate on the
+//    handle's tag bits, so they correctly classify any value that
+//    arose from a sentinel-touching operation.
+// ============================================================
+
+#[test]
+fn rational_sentinel_range_no_finite_value_exceeds_infinity() {
+    // Construct a finite value of magnitude 2^512, far above the
+    // 2^256 fudge that the previous design used as the +inf magnitude.
+    // The new tag-bit encoding makes this a nonissue: any finite,
+    // however large, sorts strictly below +infinity and strictly
+    // above -infinity.
+    reset_arena();
+    let big_pos = RationalReal::from_pair(BigInt::one() << 512u32, BigInt::one());
+    let big_neg = RationalReal::from_pair(-(BigInt::one() << 512u32), BigInt::one());
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let neg_inf = <RationalReal as RealSentinel>::neg_infinity();
+    assert!(big_pos < inf, "2^512 must be < +inf");
+    assert!(big_neg > neg_inf, "-2^512 must be > -inf");
+    assert!(big_pos.is_finite());
+    assert!(big_neg.is_finite());
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinel_propagates_through_addition() {
+    reset_arena();
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let one = RationalReal::one();
+    let r = inf + one;
+    assert!(r.is_infinite() && !r.is_finite(), "inf + 1 must be infinite");
+    assert!(!r.is_sign_negative(), "inf + 1 must be positive");
+    let neg_inf = <RationalReal as RealSentinel>::neg_infinity();
+    let r2 = inf + neg_inf;
+    assert!(r2.is_nan(), "inf + (-inf) must be NaN");
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinel_propagates_through_multiplication() {
+    reset_arena();
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let two = RationalReal::from_i64(2).unwrap();
+    let neg_two = RationalReal::from_i64(-2).unwrap();
+    let zero = RationalReal::zero();
+    assert!((inf * two).is_infinite() && !(inf * two).is_sign_negative());
+    assert!((inf * neg_two).is_infinite() && (inf * neg_two).is_sign_negative());
+    assert!((inf * zero).is_nan(), "inf * 0 must be NaN");
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinel_propagates_through_division() {
+    reset_arena();
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let two = RationalReal::from_i64(2).unwrap();
+    let zero = RationalReal::zero();
+    // inf / inf = NaN
+    assert!((inf / inf).is_nan());
+    // finite / inf = 0
+    let r = two / inf;
+    assert!(r.is_zero(), "2 / inf must be 0");
+    // 0 / 0 = NaN
+    assert!((zero / zero).is_nan());
+    // 1 / 0 = +inf
+    let one = RationalReal::one();
+    let r2 = one / zero;
+    assert!(r2.is_infinite() && !r2.is_sign_negative());
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinel_negation_flips_infinity_sign() {
+    reset_arena();
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let neg_inf = <RationalReal as RealSentinel>::neg_infinity();
+    let nan = <RationalReal as RealSentinel>::nan();
+    assert_eq!((-inf).0, neg_inf.0);
+    assert_eq!((-neg_inf).0, inf.0);
+    // -NaN is NaN (bit-tag-only; no IEEE-style sign-bit retention)
+    assert!((-nan).is_nan());
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinel_predicates_track_value_through_arithmetic() {
+    // The crux of Gemini's predicate complaint: previously is_finite
+    // was a handle-equality check, so (inf + 1) was a fresh finite
+    // handle and is_finite() returned the wrong answer. With tag-bit
+    // propagation, the post-arithmetic handle still has the +inf tag
+    // and is_finite/is_infinite/is_nan all return the correct value.
+    reset_arena();
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let derived = inf + RationalReal::one();
+    assert!(derived.is_infinite());
+    assert!(!derived.is_finite());
+    assert!(!derived.is_nan());
+    let nan_derived = (inf - inf) * RationalReal::from_i64(7).unwrap();
+    assert!(nan_derived.is_nan());
+    assert!(!nan_derived.is_finite());
+    assert!(!nan_derived.is_infinite());
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinel_nan_is_unordered_and_unequal() {
+    reset_arena();
+    let nan = <RationalReal as RealSentinel>::nan();
+    let one = RationalReal::one();
+    // PartialEq: NaN != NaN, NaN != 1
+    assert!(nan != nan);
+    assert!(nan != one);
+    assert!(one != nan);
+    // PartialOrd: NaN comparisons return None; <, >, <= and >= all false.
+    assert!(nan.partial_cmp(&one).is_none());
+    assert!(nan.partial_cmp(&nan).is_none());
+    assert!(!(nan < one));
+    assert!(!(nan > one));
+    assert!(!(nan <= one));
+    assert!(!(nan >= one));
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinel_min_max_are_nan_poisoned() {
+    reset_arena();
+    let nan = <RationalReal as RealSentinel>::nan();
+    let one = RationalReal::one();
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let neg_inf = <RationalReal as RealSentinel>::neg_infinity();
+    assert!(<RationalReal as RealSentinel>::min(nan, one).is_nan());
+    assert!(<RationalReal as RealSentinel>::max(one, nan).is_nan());
+    // -inf is the floor; +inf is the ceiling
+    assert_eq!(<RationalReal as RealSentinel>::min(neg_inf, one).0, neg_inf.0);
+    assert_eq!(<RationalReal as RealSentinel>::max(inf, one).0, inf.0);
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinel_to_f64_maps_to_ieee_specials() {
+    reset_arena();
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let neg_inf = <RationalReal as RealSentinel>::neg_infinity();
+    let nan = <RationalReal as RealSentinel>::nan();
+    assert_eq!(inf.to_f64(), f64::INFINITY);
+    assert_eq!(neg_inf.to_f64(), f64::NEG_INFINITY);
+    assert!(nan.to_f64().is_nan());
+    reset_arena();
+}
+
+#[test]
+fn rational_transcendental_propagates_sentinels() {
+    reset_arena();
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let neg_inf = <RationalReal as RealSentinel>::neg_infinity();
+    let nan = <RationalReal as RealSentinel>::nan();
+    let zero = RationalReal::zero();
+    // sqrt
+    assert!(<RationalReal as Transcendental>::sqrt(inf).is_infinite());
+    assert!(<RationalReal as Transcendental>::sqrt(neg_inf).is_nan());
+    assert!(<RationalReal as Transcendental>::sqrt(nan).is_nan());
+    // ln
+    assert!(<RationalReal as Transcendental>::ln(inf).is_infinite());
+    assert!(<RationalReal as Transcendental>::ln(zero).is_infinite()
+        && <RationalReal as Transcendental>::ln(zero).is_sign_negative());
+    assert!(<RationalReal as Transcendental>::ln(nan).is_nan());
+    // exp
+    assert!(<RationalReal as Transcendental>::exp(inf).is_infinite());
+    assert!(<RationalReal as Transcendental>::exp(neg_inf).is_zero());
+    assert!(<RationalReal as Transcendental>::exp(nan).is_nan());
+    // recip
+    assert!(<RationalReal as Transcendental>::recip(inf).is_zero());
+    assert!(<RationalReal as Transcendental>::recip(zero).is_infinite());
+    // powi
+    assert!(<RationalReal as Transcendental>::powi(inf, 0) == RationalReal::one());
+    assert!(<RationalReal as Transcendental>::powi(inf, 3).is_infinite());
+    assert!(<RationalReal as Transcendental>::powi(inf, -2).is_zero());
+    reset_arena();
+}
+
+#[test]
+fn rational_sentinels_consume_no_arena_slots() {
+    // Sentinel handles are pure tag bits; constructing them should
+    // not push anything into the arena. Contrast the previous design,
+    // where ensure_sentinels() pushed three BigRationals on first use.
+    reset_arena();
+    let baseline = arena_len();
+    let _inf = <RationalReal as RealSentinel>::infinity();
+    let _neg_inf = <RationalReal as RealSentinel>::neg_infinity();
+    let _nan = <RationalReal as RealSentinel>::nan();
+    assert_eq!(arena_len(), baseline, "sentinels must not allocate arena slots");
+    reset_arena();
+}
+
