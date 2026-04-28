@@ -2,23 +2,24 @@
 //!
 //! On IEEE floats these correspond to actual hardware semantics
 //! (`f64::INFINITY`, `f64::NAN`, `Float::is_finite`). On the rational
-//! backend we use sentinel values:
+//! backend we encode IEEE-style sentinels in the **top two bits** of the
+//! `u32` handle:
 //!
-//! - `infinity()` → a positive arena entry tagged via the static
-//!   sentinel handles below. Comparisons against finite values do the
-//!   right thing (any finite < `infinity()`).
-//! - `nan()` → a separately tagged sentinel. Comparisons against `nan`
-//!   are not meaningfully ordered, but `is_nan` returns true and
-//!   `is_finite` returns false.
-//! - `epsilon()` → 2⁻ᵖ where p is the current thread-local working
-//!   precision (used as the rounding tolerance for transcendentals).
-//! - `min`/`max` → standard `Ord::min`/`Ord::max` of the values.
+//! - `infinity()` → the `POS_INF_HANDLE` constant (tag = `0b01`,
+//!   index part unused; no arena entry).
+//! - `neg_infinity()` → `NEG_INF_HANDLE` (tag = `0b10`).
+//! - `nan()` → `NAN_HANDLE` (tag = `0b11`).
+//! - `epsilon()` → `2⁻ᵖ` where p is the current thread-local working
+//!   precision (used as the rounding tolerance for transcendentals); a
+//!   regular finite-tagged handle pushed into the arena.
+//! - `min`/`max` → IEEE-style: any-NaN ⇒ NaN; otherwise the
+//!   smaller/larger of the two operands.
 //!
-//! Implementation note: we cannot store the sentinels statically (they
-//! live in the per-thread arena) but we maintain per-thread `Cell`s
-//! holding their handles, lazily initialized. Cross-thread send is
-//! still forbidden; each thread populates its own sentinels on first
-//! access.
+//! Because the sentinels are pure tag bits with no associated arena
+//! entry, they are **immune to arena resets**: `infinity()` returns the
+//! same constant before and after `reset_arena()`. Cross-thread send
+//! is still forbidden for finite handles (their index references the
+//! per-thread arena), but sentinel handles are thread-independent.
 
 use super::arena;
 use super::precision::precision_bits;
@@ -26,70 +27,20 @@ use super::real::RationalReal;
 use crate::algebra::transcendental::{RealConst, RealSentinel};
 use num_bigint::BigInt;
 use num_rational::BigRational;
-use num_traits::{FromPrimitive, One, Signed, Zero};
+use num_traits::{FromPrimitive, One};
 use std::cell::Cell;
-
-// Tag bits stored in the high two bits of the u32 handle would let us
-// represent infinity / -infinity / nan without occupying arena slots,
-// but that constrains arena size. Cleaner: each thread stores the
-// handles in thread-local Cells, lazily populated. Cache invalidation
-// piggybacks on arena_generation() — each reset_arena() bumps that
-// counter so we re-derive on next access.
-
-thread_local! {
-    static SENTINELS: Cell<Option<Sentinels>> = const { Cell::new(None) };
-}
-
-#[derive(Copy, Clone)]
-struct Sentinels {
-    /// `arena_generation()` when the sentinels were populated.
-    /// If it changes, the arena was reset and the handles are stale.
-    generation: u64,
-    pos_inf: u32,
-    neg_inf: u32,
-    nan: u32,
-}
-
-fn ensure_sentinels() -> Sentinels {
-    if let Some(s) = SENTINELS.with(|c| c.get()) {
-        if s.generation == arena::arena_generation() {
-            return s;
-        }
-    }
-    // Push sentinels. Large fixed magnitudes so comparisons with any
-    // "reasonable" finite value resolve correctly. 2^256 for ±infinity
-    // (much larger than any solver iterate at sane scales). nan is
-    // currently 0/1 and detected by handle equality only — see the
-    // TODO in mod.rs about a tag-bits scheme that would also catch
-    // arithmetic involving nan.
-    let big: BigInt = BigInt::from(1u8) << 256u32;
-    let pos_inf = arena::push(BigRational::new(big.clone(), BigInt::one()));
-    let neg_inf = arena::push(BigRational::new(-big, BigInt::one()));
-    let nan = arena::push(BigRational::new(BigInt::zero(), BigInt::one()));
-    let s = Sentinels {
-        generation: arena::arena_generation(),
-        pos_inf,
-        neg_inf,
-        nan,
-    };
-    SENTINELS.with(|c| c.set(Some(s)));
-    s
-}
 
 impl RealSentinel for RationalReal {
     fn infinity() -> Self {
-        let s = ensure_sentinels();
-        RationalReal(s.pos_inf)
+        RationalReal(arena::POS_INF_HANDLE)
     }
 
     fn neg_infinity() -> Self {
-        let s = ensure_sentinels();
-        RationalReal(s.neg_inf)
+        RationalReal(arena::NEG_INF_HANDLE)
     }
 
     fn nan() -> Self {
-        let s = ensure_sentinels();
-        RationalReal(s.nan)
+        RationalReal(arena::NAN_HANDLE)
     }
 
     /// `2^-p` where p is the current thread-local working precision in
@@ -112,27 +63,46 @@ impl RealSentinel for RationalReal {
         Self::epsilon()
     }
 
+    #[inline]
     fn is_nan(self) -> bool {
-        let s = ensure_sentinels();
-        self.0 == s.nan
+        arena::is_nan_handle(self.0)
     }
 
+    #[inline]
     fn is_finite(self) -> bool {
-        let s = ensure_sentinels();
-        self.0 != s.pos_inf && self.0 != s.neg_inf && self.0 != s.nan
+        arena::is_finite_handle(self.0)
     }
 
+    #[inline]
     fn is_infinite(self) -> bool {
-        let s = ensure_sentinels();
-        self.0 == s.pos_inf || self.0 == s.neg_inf
+        arena::is_infinite_handle(self.0)
     }
 
     fn is_sign_negative(self) -> bool {
-        // No signed zero in rationals; equivalent to self < 0.
-        arena::with(self.0, |a| a.is_negative())
+        // IEEE: NaN is not classified as negative; -inf is. For finite
+        // values, equivalent to self < 0 (no signed zero in rationals).
+        if arena::is_nan_handle(self.0) {
+            return false;
+        }
+        if arena::is_neg_inf_handle(self.0) {
+            return true;
+        }
+        if arena::is_pos_inf_handle(self.0) {
+            return false;
+        }
+        arena::with(self.0, |a| {
+            use num_traits::Signed;
+            a.is_negative()
+        })
     }
 
+    /// IEEE-style `min`: NaN-poisoned (NaN ⇒ NaN), otherwise returns the
+    /// smaller of the two values. Note that this differs from the
+    /// "NaN-suppressing" `f64::min` and matches `f64::minimum`.
     fn min(self, other: Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return Self::nan();
+        }
         if self <= other {
             self
         } else {
@@ -140,7 +110,11 @@ impl RealSentinel for RationalReal {
         }
     }
 
+    /// IEEE-style `max`: NaN-poisoned. See [`Self::min`].
     fn max(self, other: Self) -> Self {
+        if self.is_nan() || other.is_nan() {
+            return Self::nan();
+        }
         if self >= other {
             self
         } else {
@@ -203,6 +177,7 @@ fn const_cache() -> ConstCache {
 /// stay capped at `p+16` bits.
 fn arctan_recip(n: u32, p: u32) -> BigRational {
     use super::cap::round_to_pow2_denominator;
+    use num_traits::Signed;
     let n_r = BigRational::from_u32(n).unwrap();
     let z = BigRational::one() / &n_r; // 1/n
     let z2 = &z * &z;

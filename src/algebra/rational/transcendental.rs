@@ -196,18 +196,20 @@ fn exp_rational(x: &BigRational, p: u32) -> BigRational {
     // m / 1 with m the rounded integer.
     let k_int = k_rat.numer().clone();
     // For very large |k|, exp(x) overflows or underflows beyond any
-    // representable rational at the working precision. Saturate to the
-    // ±infinity / zero sentinels rather than silently wrapping at i64
-    // (the previous .unwrap_or(0) returned exp(x) ≈ 1, catastrophically
-    // wrong). Threshold: 2^256 is the magnitude of the +inf sentinel
-    // in sentinel.rs — saturate well before the exponent reaches that.
+    // representable rational at the working precision. Threshold: when
+    // |k| > 2^30 the exponent x ≈ k·ln 2 is already ~7×10^8 — well
+    // beyond any plausible solver iterate's magnitude. We saturate to a
+    // very-large finite value (2^256) for positive k or zero for
+    // negative k. The outer `Transcendental::exp` wrapper also handles
+    // ±inf inputs via the sentinel tag, so this internal saturation
+    // only fires when the caller hands us a finite-tagged but
+    // unrealistically large iterate (typically a sign of an unrelated
+    // upstream bug in the calling code).
     const K_LIMIT: i64 = 1 << 30;
     let k_i64 = match k_int.to_i64() {
         Some(k) if k.abs() <= K_LIMIT => k,
         _ => {
-            // Magnitude of exp(x) is far outside sentinel range.
             return if k_int.is_positive() {
-                // Match sentinel.rs's +inf magnitude: 2^256.
                 BigRational::new(BigInt::one() << 256u32, BigInt::one())
             } else {
                 BigRational::zero()
@@ -274,31 +276,151 @@ fn powi_exact(base: &BigRational, n: i32) -> BigRational {
 
 impl Transcendental for RationalReal {
     fn sqrt(self) -> Self {
+        // sqrt propagation: NaN → NaN; +inf → +inf; -inf → NaN; -finite → NaN.
+        if self.is_nan_tag() || self.is_neg_inf_tag() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::nan();
+        }
+        if self.is_pos_inf_tag() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::infinity();
+        }
+        // finite. Trap negatives at the sentinel boundary rather than
+        // panicking inside sqrt_newton.
+        if <Self as num_traits::Signed>::is_negative(&self) {
+            return <Self as crate::algebra::transcendental::RealSentinel>::nan();
+        }
         let p = precision_bits();
         let v = arena::with(self.0, |a| sqrt_newton(a, p));
         RationalReal::from_bigrational(v)
     }
 
     fn ln(self) -> Self {
+        // ln propagation: NaN → NaN; +inf → +inf; -inf → NaN;
+        // ln(non-positive finite) → -inf at 0, NaN below 0.
+        if self.is_nan_tag() || self.is_neg_inf_tag() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::nan();
+        }
+        if self.is_pos_inf_tag() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::infinity();
+        }
+        if self.is_zero() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::neg_infinity();
+        }
+        if <Self as num_traits::Signed>::is_negative(&self) {
+            return <Self as crate::algebra::transcendental::RealSentinel>::nan();
+        }
         let p = precision_bits();
         let v = arena::with(self.0, |a| ln_rational(a, p));
         RationalReal::from_bigrational(v)
     }
 
     fn exp(self) -> Self {
+        // exp propagation: NaN → NaN; +inf → +inf; -inf → 0.
+        if self.is_nan_tag() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::nan();
+        }
+        if self.is_pos_inf_tag() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::infinity();
+        }
+        if self.is_neg_inf_tag() {
+            return Self::zero();
+        }
         let p = precision_bits();
         let v = arena::with(self.0, |a| exp_rational(a, p));
         RationalReal::from_bigrational(v)
     }
 
     fn powf(self, n: Self) -> Self {
-        // a^b = exp(b · ln a). Path through ln ⇒ a > 0 required;
-        // handle the standard mathematical edge cases for a = 0
-        // explicitly (0^b = 0 for b > 0, 1 for b = 0, NaN for b < 0).
-        if self.is_zero() {
-            return if n.is_zero() {
+        // a^b = exp(b · ln a). The sentinel-input rules here follow
+        // IEEE-754 / C99's pow(): inputs and special cases covered
+        // explicitly; everything else delegates through ln/exp, which
+        // themselves are now sentinel-aware (see above).
+        //
+        // Order matters: the IEEE 754 standard pins down two cases that
+        // *do not* propagate NaN — pow(x, 0) = 1 for *any* x including
+        // NaN/±inf, and pow(1, y) = 1 for *any* y including NaN/±inf.
+        // These have to be checked before the NaN short-circuit.
+        if n.is_zero() {
+            // x^0 = 1 for any x (including NaN, ±inf, and 0; matches IEEE 754 / C99 pow).
+            return Self::one();
+        }
+        // 1^y = 1 for any y (including NaN and ±inf), per IEEE 754.
+        if self.is_finite_tag() && arena::with(self.0, |r| r.is_one()) {
+            return Self::one();
+        }
+        if self.is_nan_tag() || n.is_nan_tag() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::nan();
+        }
+        // Base = ±inf
+        if self.is_pos_inf_tag() {
+            // (+inf)^positive = +inf; (+inf)^negative = 0
+            return if <Self as num_traits::Signed>::is_positive(&n) {
+                <Self as crate::algebra::transcendental::RealSentinel>::infinity()
+            } else {
+                Self::zero()
+            };
+        }
+        if self.is_neg_inf_tag() {
+            // (-inf)^pos integer odd  = -inf; even = +inf; non-integer = NaN
+            // (-inf)^neg integer odd  = -0;   even = +0;   non-integer = NaN
+            // (-inf)^(+inf) = +inf;  (-inf)^(-inf) = +0    (per IEEE 754)
+            //
+            // We don't track integer-ness on RationalReal explicitly
+            // here, but we can detect it: integer means denom == 1.
+            let n_is_pos = <Self as num_traits::Signed>::is_positive(&n);
+            if !n.is_finite_tag() {
+                // n is ±inf (NaN already filtered above). |-inf| > 1 so
+                // (-inf)^(+inf) → +inf, (-inf)^(-inf) → +0.
+                return if n_is_pos {
+                    <Self as crate::algebra::transcendental::RealSentinel>::infinity()
+                } else {
+                    Self::zero()
+                };
+            }
+            // finite n
+            let denom_is_one = arena::with(n.0, |r| r.denom().is_one());
+            if !denom_is_one {
+                return <Self as crate::algebra::transcendental::RealSentinel>::nan();
+            }
+            let numer_is_odd = arena::with(n.0, |r| r.numer().bit(0));
+            return match (n_is_pos, numer_is_odd) {
+                (true, true) => <Self as crate::algebra::transcendental::RealSentinel>::neg_infinity(),
+                (true, false) => <Self as crate::algebra::transcendental::RealSentinel>::infinity(),
+                // negative integer exponent: result has magnitude 0.
+                // Sign collapses to 0 (no signed zero in rationals).
+                (false, _) => Self::zero(),
+            };
+        }
+        // Exponent = ±inf, base finite (the |base| == 1 case is
+        // handled above by the early `1^y = 1` path; -1^y reaches
+        // here, and IEEE-754 says pow(-1, ±inf) = 1 as well).
+        if n.is_pos_inf_tag() {
+            // |a| > 1 → +inf;  |a| == 1 → 1;  |a| < 1 → 0
+            let abs = <Self as num_traits::Signed>::abs(&self);
+            let one = Self::one();
+            return if abs > one {
+                <Self as crate::algebra::transcendental::RealSentinel>::infinity()
+            } else if abs == one {
                 Self::one()
-            } else if <Self as num_traits::Signed>::is_positive(&n) {
+            } else {
+                Self::zero()
+            };
+        }
+        if n.is_neg_inf_tag() {
+            let abs = <Self as num_traits::Signed>::abs(&self);
+            let one = Self::one();
+            return if abs > one {
+                Self::zero()
+            } else if abs == one {
+                Self::one()
+            } else {
+                <Self as crate::algebra::transcendental::RealSentinel>::infinity()
+            };
+        }
+        // finite^finite path: base = 0 special-cased; other negative-base cases
+        // panic via ln (kept as the existing behaviour: solver call sites
+        // never produce negative bases inside the barrier evaluation).
+        if self.is_zero() {
+            return if <Self as num_traits::Signed>::is_positive(&n) {
                 Self::zero()
             } else {
                 <Self as crate::algebra::transcendental::RealSentinel>::nan()
@@ -314,16 +436,49 @@ impl Transcendental for RationalReal {
     }
 
     fn powi(self, n: i32) -> Self {
+        // (NaN)^n = NaN; (±inf)^n: see powf-style rules but n is always integer.
+        if self.is_nan_tag() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::nan();
+        }
+        if n == 0 {
+            return Self::one();
+        }
+        if self.is_pos_inf_tag() {
+            return if n > 0 {
+                <Self as crate::algebra::transcendental::RealSentinel>::infinity()
+            } else {
+                Self::zero()
+            };
+        }
+        if self.is_neg_inf_tag() {
+            let odd = (n & 1) != 0;
+            return if n > 0 {
+                if odd {
+                    <Self as crate::algebra::transcendental::RealSentinel>::neg_infinity()
+                } else {
+                    <Self as crate::algebra::transcendental::RealSentinel>::infinity()
+                }
+            } else {
+                Self::zero()
+            };
+        }
+        // finite. powi_exact divides by `base` for n < 0 and would panic
+        // on division by zero — short-circuit that to ±inf via the sentinel.
+        if self.is_zero() && n < 0 {
+            return <Self as crate::algebra::transcendental::RealSentinel>::infinity();
+        }
         let v = arena::with(self.0, |a| powi_exact(a, n));
         RationalReal::from_bigrational(v)
     }
 
     fn recip(self) -> Self {
-        // Match IEEE 1.0 / 0.0 = +infinity rather than panicking on
-        // a BigRational divide-by-zero. The solver uses recip() in
-        // hot paths (KKT diagonal, equilibration) where a transient
-        // zero is meaningful and should propagate as inf via the
-        // sentinel rather than aborting the solve.
+        // 1 / NaN = NaN; 1 / ±inf = 0; 1 / 0 = +inf (matches IEEE).
+        if self.is_nan_tag() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::nan();
+        }
+        if self.is_infinite_tag() {
+            return Self::zero();
+        }
         if self.is_zero() {
             return <Self as crate::algebra::transcendental::RealSentinel>::infinity();
         }
