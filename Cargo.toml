@@ -224,6 +224,11 @@ path = "examples/rust/example_lp_rational.rs"
 required-features = ["bigrational"]
 
 [[example]]
+name = "lp_mpfr"
+path = "examples/rust/example_lp_mpfr.rs"
+required-features = ["mpfr"]
+
+[[example]]
 name = "callback"
 path = "examples/rust/example_callback.rs"
 

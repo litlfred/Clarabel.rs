@@ -63,6 +63,33 @@ jobs:
     - name: cargo check --features sdp-openblas,faer-sparse,serde
       run: cargo check --features sdp-openblas,faer-sparse,serde
 
+  mpfr:
+    # MPFR-precision float backend tests. Mutually exclusive with
+    # sdp/faer-sparse, so a separate job. Tests build, run unit tests,
+    # and exercise the lp_mpfr example end-to-end.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install GMP / MPFR build deps (for the rug crate's static build)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgmp-dev libmpfr-dev pkg-config
+
+    - name: cargo build --features mpfr
+      run: cargo build --verbose --no-default-features --features serde,mpfr
+
+    - name: Run unit tests for the mpfr module
+      run: cargo test --verbose --no-default-features --features serde,mpfr --lib mpfr::
+
+    - name: Build the lp_mpfr example
+      run: cargo build --release --no-default-features --features serde,mpfr --example lp_mpfr
+
+    - name: Run the lp_mpfr example end-to-end
+      run: cargo run --release --no-default-features --features serde,mpfr --example lp_mpfr
+
   bigrational:
     # Exact-rational backend tests. Mutually exclusive with sdp/faer-sparse,
     # so this is a separate job. Marked continue-on-error until the
