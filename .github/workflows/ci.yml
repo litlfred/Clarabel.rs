@@ -39,6 +39,30 @@ jobs:
       with:
         token: ${{secrets.CODECOV_TOKEN}}
 
+  sdp_check:
+    # Fast type-check of the --features sdp,faer-sparse path on linux,
+    # without running the full BLAS/LAPACK link or test pass. Exists to
+    # surface trait-bound regressions in the SDP code paths (chordal
+    # decomposition, dense fixed-size 3x3 eigen/svd, BLAS Cholesky)
+    # quickly on PRs — the macos build job above is the source of truth
+    # for SDP correctness, but it's slow and macos minutes are expensive.
+    #
+    # Was added after a Copy -> Clone refactor (Phase 2 of the
+    # bigrational backend) silently broke `--features sdp` because none
+    # of the existing CI jobs exercised that combination on linux.
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install BLAS / LAPACK build deps (for the openblas-src build script)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake gfortran build-essential libopenblas-dev pkg-config
+
+    - name: cargo check --features sdp-openblas,faer-sparse,serde
+      run: cargo check --features sdp-openblas,faer-sparse,serde
+
   bigrational:
     # Exact-rational backend tests. Mutually exclusive with sdp/faer-sparse,
     # so this is a separate job. Marked continue-on-error until the
