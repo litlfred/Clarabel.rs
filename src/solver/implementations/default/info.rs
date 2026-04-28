@@ -208,8 +208,9 @@ where
 
         // Per-iteration bit-width trace (only populated when T's
         // BitWidthDiagnostic returns non-zero values, i.e. on
-        // arbitrary-precision backends like RationalReal).
-        use crate::algebra::BitWidthDiagnostic;
+        // arbitrary-precision backends like RationalReal). Auto-import
+        // via the FloatT supertrait chain — no explicit `use` needed.
+        use crate::algebra::BitWidthDiagnostic as _;
         let (n_max, d_max) = variables
             .x
             .iter()

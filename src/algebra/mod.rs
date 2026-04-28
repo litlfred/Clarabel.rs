@@ -38,6 +38,15 @@ pub use rational::{
     set_precision_bits, with_max_arena_bits, with_precision, RationalReal,
 };
 
+// MPFR-backed float backend (feature-gated)
+#[cfg(feature = "mpfr")]
+mod mpfr;
+#[cfg(feature = "mpfr")]
+pub use mpfr::{
+    default_precision as mpfr_default_precision, set_default_precision as set_mpfr_default_precision,
+    with_mpfr_precision, MpfrFloat,
+};
+
 // matrix implementations
 mod csc;
 pub use csc::*;
