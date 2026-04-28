@@ -330,16 +330,25 @@ impl Transcendental for RationalReal {
     }
 
     fn powf(self, n: Self) -> Self {
-        // a^b = exp(b · ln a). NaN-poisoned. The sentinel-input rules
-        // here follow IEEE-754 / C99's pow(): inputs and special cases
-        // covered explicitly; everything else delegates through ln/exp,
-        // which themselves are now sentinel-aware (see above).
+        // a^b = exp(b · ln a). The sentinel-input rules here follow
+        // IEEE-754 / C99's pow(): inputs and special cases covered
+        // explicitly; everything else delegates through ln/exp, which
+        // themselves are now sentinel-aware (see above).
+        //
+        // Order matters: the IEEE 754 standard pins down two cases that
+        // *do not* propagate NaN — pow(x, 0) = 1 for *any* x including
+        // NaN/±inf, and pow(1, y) = 1 for *any* y including NaN/±inf.
+        // These have to be checked before the NaN short-circuit.
+        if n.is_zero() {
+            // x^0 = 1 for any x (including NaN, ±inf, and 0; matches IEEE 754 / C99 pow).
+            return Self::one();
+        }
+        // 1^y = 1 for any y (including NaN and ±inf), per IEEE 754.
+        if self.is_finite_tag() && arena::with(self.0, |r| r.is_one()) {
+            return Self::one();
+        }
         if self.is_nan_tag() || n.is_nan_tag() {
             return <Self as crate::algebra::transcendental::RealSentinel>::nan();
-        }
-        if n.is_zero() {
-            // x^0 = 1 for any x (including ±inf and 0, matching C99 pow).
-            return Self::one();
         }
         // Base = ±inf
         if self.is_pos_inf_tag() {
@@ -353,13 +362,19 @@ impl Transcendental for RationalReal {
         if self.is_neg_inf_tag() {
             // (-inf)^pos integer odd  = -inf; even = +inf; non-integer = NaN
             // (-inf)^neg integer odd  = -0;   even = +0;   non-integer = NaN
+            // (-inf)^(+inf) = +inf;  (-inf)^(-inf) = +0    (per IEEE 754)
+            //
             // We don't track integer-ness on RationalReal explicitly
             // here, but we can detect it: integer means denom == 1.
             let n_is_pos = <Self as num_traits::Signed>::is_positive(&n);
             if !n.is_finite_tag() {
-                // exponent is +inf (already filtered NaN/-inf would mean
-                // zero base, not -inf base)
-                return <Self as crate::algebra::transcendental::RealSentinel>::infinity();
+                // n is ±inf (NaN already filtered above). |-inf| > 1 so
+                // (-inf)^(+inf) → +inf, (-inf)^(-inf) → +0.
+                return if n_is_pos {
+                    <Self as crate::algebra::transcendental::RealSentinel>::infinity()
+                } else {
+                    Self::zero()
+                };
             }
             // finite n
             let denom_is_one = arena::with(n.0, |r| r.denom().is_one());
@@ -375,7 +390,9 @@ impl Transcendental for RationalReal {
                 (false, _) => Self::zero(),
             };
         }
-        // Exponent = ±inf, base finite (non-zero handled by IEEE rules below).
+        // Exponent = ±inf, base finite (the |base| == 1 case is
+        // handled above by the early `1^y = 1` path; -1^y reaches
+        // here, and IEEE-754 says pow(-1, ±inf) = 1 as well).
         if n.is_pos_inf_tag() {
             // |a| > 1 → +inf;  |a| == 1 → 1;  |a| < 1 → 0
             let abs = <Self as num_traits::Signed>::abs(&self);

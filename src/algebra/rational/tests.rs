@@ -491,6 +491,42 @@ fn rational_sentinel_to_f64_maps_to_ieee_specials() {
 }
 
 #[test]
+fn rational_powf_ieee_special_cases() {
+    // IEEE-754 / C99 pow special cases that survived the
+    // bit-tagging review (Gemini PR #2 review):
+    //
+    //   pow(x, 0) = 1 for any x, including NaN and ±inf
+    //   pow(1, y) = 1 for any y, including NaN and ±inf
+    //   pow(-inf, +inf) = +inf
+    //   pow(-inf, -inf) = +0
+    reset_arena();
+    let inf = <RationalReal as RealSentinel>::infinity();
+    let neg_inf = <RationalReal as RealSentinel>::neg_infinity();
+    let nan = <RationalReal as RealSentinel>::nan();
+    let zero = RationalReal::zero();
+    let one = RationalReal::one();
+
+    // x^0 = 1 for any x (NaN, ±inf, 0)
+    assert_eq!(nan.powf(zero), one, "pow(NaN, 0) must be 1");
+    assert_eq!(inf.powf(zero), one, "pow(+inf, 0) must be 1");
+    assert_eq!(neg_inf.powf(zero), one, "pow(-inf, 0) must be 1");
+    assert_eq!(zero.powf(zero), one, "pow(0, 0) must be 1");
+
+    // 1^y = 1 for any y (NaN, ±inf)
+    assert_eq!(one.powf(nan), one, "pow(1, NaN) must be 1");
+    assert_eq!(one.powf(inf), one, "pow(1, +inf) must be 1");
+    assert_eq!(one.powf(neg_inf), one, "pow(1, -inf) must be 1");
+
+    // pow(-inf, ±inf)
+    assert!(neg_inf.powf(inf).is_infinite() && !neg_inf.powf(inf).is_sign_negative(),
+        "pow(-inf, +inf) must be +inf");
+    assert!(neg_inf.powf(neg_inf).is_zero(),
+        "pow(-inf, -inf) must be +0");
+
+    reset_arena();
+}
+
+#[test]
 fn rational_transcendental_propagates_sentinels() {
     reset_arena();
     let inf = <RationalReal as RealSentinel>::infinity();
