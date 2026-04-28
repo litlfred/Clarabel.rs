@@ -226,6 +226,24 @@ fn rational_sentinel_cache_invalidates_on_reset_arena() {
     reset_arena();
 }
 
+#[cfg(feature = "serde")]
+#[test]
+fn rational_serde_round_trip_preserves_exact_value() {
+    use serde_json;
+    reset_arena();
+    // 22/7 has no exact f64 representation; the round trip must
+    // preserve the (numer, denom) pair exactly even after the
+    // arena is reset between serialize and deserialize.
+    let r = RationalReal::from_pair(BigInt::from(22), BigInt::from(7));
+    let s = serde_json::to_string(&r).unwrap();
+    reset_arena(); // simulate transport across a process boundary
+    let back: RationalReal = serde_json::from_str(&s).unwrap();
+    let (n, d) = back.into_pair();
+    assert_eq!(n, BigInt::from(22));
+    assert_eq!(d, BigInt::from(7));
+    reset_arena();
+}
+
 #[test]
 fn rational_one_third_plus_one_third_plus_one_third_still_one_in_exact_mode() {
     // Default mode (no cap) preserves the headline guarantee that

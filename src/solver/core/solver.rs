@@ -16,6 +16,7 @@ use std::io::Write;
 /// Status of solver at termination
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Debug, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum SolverStatus {
     /// Problem is not solved (solver hasn't run).
     #[default]

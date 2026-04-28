@@ -56,6 +56,8 @@ mod precision;
 mod real;
 mod sentinel;
 mod transcendental;
+#[cfg(feature = "serde")]
+mod serde_impl;
 
 pub use arena::{arena_len, reset_arena};
 pub use precision::{

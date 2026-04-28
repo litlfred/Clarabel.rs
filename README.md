@@ -95,6 +95,20 @@ Two precision modes:
   general-purpose runs (~77 decimal digits, ~5× the precision of `f64`),
   `Some(167)` for ≥ 50 decimal digits.
 
+Tolerance semantics in exact mode:
+
+- The solver's stopping criteria (`tol_feas`, `tol_gap_abs`, `tol_gap_rel`) are typed `T` and compared against `T`-typed residuals. With `T = RationalReal` the comparisons are *exact* — `r_prim < tol_feas` is true iff the rational `r_prim` is strictly less than the rational `tol_feas`.
+- The `1e-8` defaults that `DefaultSettings::default()` would copy from the f64 path are constructed via `T::from_f64(1e-8)` and so capture the **exact IEEE-binary** rational `5764607523034235/2^79`, not the decimal `1/100_000_000`. To set tolerances by intent rather than by IEEE round-trip, build settings explicitly:
+  ```rust
+  let tol = RationalReal::from_pair(BigInt::from(1), BigInt::from(100_000_000));
+  let settings = DefaultSettingsBuilder::<RationalReal>::default()
+      .tol_feas(tol).tol_gap_abs(tol).tol_gap_rel(tol)
+      .build()?;
+  ```
+- A `tol = T::zero()` setting is permitted and means "terminate iff the residuals are exactly zero" — only achievable for problems whose optima happen to be rational and reachable by a finite IPM trajectory. For most problems use a small positive rational; the headline exactness guarantee is on the *iterates*, not on the termination test.
+- When `set_max_arena_bits(Some(p))` is engaged, residual comparisons see the rounded values, so `tol = T::zero()` will almost never fire and a positive rational `tol` is required as in f64 mode.
+- `Solution<RationalReal>` derives `serde::Serialize`/`Deserialize` (with `T: Serialize + DeserializeOwned`), so witness JSON files preserve the exact `(numer, denom)` pair across save/load — useful for QOU-style nuclear-mass certificates.
+
 Limitations and feature interactions:
 
 - Mutually exclusive with `sdp` and `faer-sparse` — those features pin

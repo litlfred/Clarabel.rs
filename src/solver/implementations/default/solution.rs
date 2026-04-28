@@ -7,7 +7,17 @@ use crate::{
 };
 
 /// Standard-form solver type implementing the [`Solution`](crate::solver::core::traits::Solution) trait
+///
+/// When the `serde` feature is enabled, this type derives `Serialize`
+/// and `Deserialize` with bound `T: Serialize + DeserializeOwned`.
+/// For `T = RationalReal` this gives bit-exact JSON witnesses
+/// (numerator/denominator pairs preserved through round-trip).
 #[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(bound = "T: serde::Serialize + serde::de::DeserializeOwned")
+)]
 pub struct DefaultSolution<T> {
     /// primal solution
     pub x: Vec<T>,
