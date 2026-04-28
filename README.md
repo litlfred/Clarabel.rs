@@ -95,6 +95,12 @@ Two precision modes:
   general-purpose runs (~77 decimal digits, ~5× the precision of `f64`),
   `Some(167)` for ≥ 50 decimal digits.
 
+The end-to-end `examples/rust/example_lp_rational.rs` solves a 2-D box
+LP in ~50 ms with `set_max_arena_bits(Some(256))` (10663 arena entries,
+6 IPM iterations bit-identical to the f64 baseline, primal `x` returned
+as exact 256-bit-bounded rationals). Without the cap the same example
+takes minutes per iteration as denominators grow geometrically.
+
 Tolerance semantics in exact mode:
 
 - The solver's stopping criteria (`tol_feas`, `tol_gap_abs`, `tol_gap_rel`) are typed `T` and compared against `T`-typed residuals. With `T = RationalReal` the comparisons are *exact* — `r_prim < tol_feas` is true iff the rational `r_prim` is strictly less than the rational `tol_feas`.
