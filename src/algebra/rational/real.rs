@@ -15,16 +15,16 @@ use std::ops::{
 /// Exact-rational scalar handle.
 ///
 /// 4-byte `Copy` index into the thread-local arena that owns the
-/// `BigRational` value. See [`super`] (the `rational` module docstring)
-/// for the memory model and invariants.
+/// `BigRational` value. See the `rational` module docstring for the
+/// memory model and invariants.
 ///
 /// # Lifecycle
-/// Construct via [`RationalReal::from_bigrational`], [`from_pair`], or
-/// the `From<f64>`/`From<i64>` impls. Use arithmetic, comparisons, and
-/// conversions inline. Extract a final value via
-/// [`into_pair`](Self::into_pair) (consuming `(BigInt, BigInt)`),
-/// [`to_bigrational`](Self::to_bigrational) (cloning), or
-/// [`to_f64`](Self::to_f64) (lossy).
+/// Construct via [`RationalReal::from_bigrational`],
+/// [`RationalReal::from_pair`], or the `From<f64>`/`From<i64>` impls.
+/// Use arithmetic, comparisons, and conversions inline. Extract a
+/// final value via [`into_pair`](Self::into_pair) (consuming
+/// `(BigInt, BigInt)`), [`to_bigrational`](Self::to_bigrational)
+/// (cloning), or [`to_f64`](Self::to_f64) (lossy).
 ///
 /// # Send + Sync
 /// `RationalReal` is declared `Send + Sync` via `unsafe impl` because

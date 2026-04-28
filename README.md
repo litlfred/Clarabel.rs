@@ -54,6 +54,62 @@ Clarabel is also available in a Julia implementation.  See [here](https://github
 * __Infeasibility detection__: Infeasible problems are detected using a homogeneous embedding technique.
 * __Open Source__: Our code is available on [GitHub](https://github.com/oxfordcontrol/Clarabel.rs) and distributed under the Apache 2.0 License
 
+## Exact-arithmetic backend (experimental)
+
+The optional `bigrational` Cargo feature replaces the default `f64` scalar
+type with `RationalReal` — an arbitrary-precision rational backed by
+[`num_rational::BigRational`](https://docs.rs/num-rational) stored in a
+thread-local arena. LP/QP iterates are bit-exact rationals; SOCP/exp/pow
+barrier transcendentals (`sqrt`, `ln`, `exp`, `powf`) are computed at a
+configurable thread-local working precision via Newton/Taylor iterations.
+
+```toml
+[dependencies]
+clarabel = { version = "0", default-features = false, features = ["serde", "bigrational"] }
+```
+
+```rust
+use clarabel::algebra::*;
+use clarabel::solver::*;
+
+let mut solver = DefaultSolver::<RationalReal>::new(&P, &q, &A, &b, &cones, settings)?;
+solver.solve();
+
+// Extract the primal solution as exact rationals.
+for xi in &solver.solution.x {
+    let (numer, denom) = xi.into_pair();   // BigInt, BigInt
+    println!("{} / {}", numer, denom);
+}
+```
+
+Two precision modes:
+
+- **Exact** (default): `+`, `-`, `*`, `/` on `RationalReal` are exact and
+  unbounded. The headline guarantee `(1/3) + (1/3) + (1/3) == 1` holds
+  exactly. Per-iteration BigRational denominators grow geometrically so
+  each subsequent operation gets slower; this is intrinsic to exact
+  rational LP solving and limits practical use to small problems.
+- **Bounded-precision**: call `set_max_arena_bits(Some(p))` to round
+  arithmetic results to `m / 2ᵖ` whenever a numerator or denominator
+  would otherwise exceed `p` bits. Recommended values: `Some(256)` for
+  general-purpose runs (~77 decimal digits, ~5× the precision of `f64`),
+  `Some(167)` for ≥ 50 decimal digits.
+
+Limitations and feature interactions:
+
+- Mutually exclusive with `sdp` and `faer-sparse` — those features pin
+  `T` to `f32`/`f64` for BLAS/LAPACK and `faer::RealField` operations.
+- The `Send + Sync` claim on `RationalReal` is upheld by an
+  `unsafe impl` with the documented invariant that a value may only be
+  dereferenced on the thread that produced it. Within `solver.solve()`
+  this is satisfied (Clarabel's IPM is single-threaded for a given
+  problem). Outer parallelism — independent solves on independent
+  threads, each with its own thread-local arena — is supported.
+- Memory grows monotonically during a solve. Call
+  `clarabel::algebra::reset_arena()` between solves to recover.
+
+See `examples/rust/example_lp_rational.rs` for an end-to-end demo.
+
 # Installation
 
 Clarabel can be imported to Cargo based Rust projects by adding
