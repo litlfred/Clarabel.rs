@@ -61,9 +61,9 @@ pub struct DefaultInfo<T> {
 
     /// Per-iteration trace of (iter, max_numer_bits, max_denom_bits)
     /// across the primal `x` vector. Populated only on backends with
-    /// arbitrary-precision representations (e.g. `RationalReal`); for
-    /// IEEE floats this stays empty (the underlying
-    /// [`BitWidthDiagnostic`](crate::algebra::transcendental::BitWidthDiagnostic)
+    /// arbitrary-precision representations (e.g. `RationalReal`,
+    /// `MpfrFloat`); for IEEE floats this stays empty (the underlying
+    /// [`BitWidthDiagnostic`](crate::algebra::BitWidthDiagnostic)
     /// returns `(0, 0)` and we skip the push). Useful for observing
     /// rational denominator blow-up across an IPM run; QOU uses this
     /// to predict whether a problem at H_n is tractable a priori.

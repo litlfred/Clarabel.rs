@@ -34,8 +34,26 @@
 //!
 //! # Mutual exclusivity
 //!
-//! Cannot be combined with `sdp` or `faer-sparse`. Those features pin
-//! `T` to `f32`/`f64` for BLAS / `faer::RealField` operations.
+//! Cannot be combined with `sdp` / `sdp-*` or `faer-sparse`. Those
+//! features pin `T` to `f32`/`f64` for BLAS / `faer::RealField`
+//! operations. The combination is rejected at compile time via the
+//! `compile_error!`s below.
+//!
+//! **For SDP work**: this backend is the wrong tool. PSD cone
+//! projection requires eigendecomposition, which is not exact in
+//! rationals (eigenvalues of rational symmetric matrices are
+//! algebraic numbers, not generally rational). Two production paths:
+//!
+//! - **High-precision SDP**: use the [`mpfr`](crate::algebra::mpfr)
+//!   backend (`MpfrFloat`) — bounded denominator size, configurable
+//!   precision, supports the existing BLAS path.
+//!
+//! - **Certified rational SDP solutions**: solve in `f64` or
+//!   `MpfrFloat`, then round the dual back to exact rationals via a
+//!   Peyrl–Parrilo-style tightening step. The standard recipe is
+//!   continued-fraction rational rounding + an exact-arithmetic
+//!   feasibility verify in `RationalReal`. A `tighten_to_rational`
+//!   helper for this is on the roadmap (see PR #1 round-4 thread).
 
 #[cfg(feature = "sdp")]
 compile_error!(

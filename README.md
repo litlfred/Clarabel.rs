@@ -63,6 +63,17 @@ thread-local arena. LP/QP iterates are bit-exact rationals; SOCP/exp/pow
 barrier transcendentals (`sqrt`, `ln`, `exp`, `powf`) are computed at a
 configurable thread-local working precision via Newton/Taylor iterations.
 
+> ⚠️ **`bigrational` does not support SDPs.** PSD cone projection requires
+> eigendecomposition, which is not exact in rationals. The feature
+> emits a `compile_error!` if combined with `sdp`/`sdp-*` or
+> `faer-sparse` (those features pin `T` to `f32`/`f64` for BLAS / faer's
+> `RealField`). For high-precision SDP use the `mpfr` backend below
+> with the existing BLAS path; for **certified rational SDP solutions**,
+> solve in `f64`/`MpfrFloat` and round the dual back to rationals via
+> a Peyrl–Parrilo-style tightening step (helper not yet upstream — see
+> the [round-4 thread on PR #1](https://github.com/litlfred/Clarabel.rs/pull/1) for the
+> proposed `tighten_to_rational` API).
+
 ```toml
 [dependencies]
 clarabel = { version = "0", default-features = false, features = ["serde", "bigrational"] }
