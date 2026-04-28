@@ -334,7 +334,7 @@ fn rational_one_third_plus_one_third_plus_one_third_still_one_in_exact_mode() {
 // Sentinel bit-tagging propagation tests.
 //
 // These verify the three correctness issues flagged by Gemini in the
-// PR-#1 review of the original handle-equality sentinel design:
+// PR #1 review of the original handle-equality sentinel design:
 //
 // 1. Range — no finite arena value can ever exceed +infinity or be
 //    below -infinity, regardless of magnitude.

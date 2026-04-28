@@ -95,9 +95,11 @@ impl RationalReal {
         arena::is_nan_handle(self.0)
     }
 
-    /// Sign of the value as a small `i32` (-1, 0, +1) for use in
-    /// sentinel-propagation arithmetic. NaN inputs return 0 (callers
-    /// should have already short-circuited NaN).
+    /// Sign of the value as a small `i32` (`-1`, `0`, or `+1`) for use
+    /// in sentinel-propagation arithmetic. NaN inputs return `0`
+    /// because callers should already have short-circuited NaN by the
+    /// time they call this; treating NaN as zero keeps the function
+    /// total and avoids panicking inside the `with` borrow.
     #[inline]
     pub(crate) fn sign_i32(self) -> i32 {
         if self.is_nan_tag() {
@@ -418,6 +420,10 @@ impl RationalReal {
     pub(crate) fn nan_const() -> Self {
         RationalReal(arena::NAN_HANDLE)
     }
+    /// Push a fresh zero into the arena and return the resulting
+    /// finite-tagged handle. Internal shim used by arithmetic operators
+    /// (e.g. `finite / inf = 0`) when they need a zero result without
+    /// going through the `<Self as Zero>::zero()` trait dispatch.
     #[inline]
     pub(crate) fn zero_arena() -> Self {
         RationalReal(arena::push_zero())
