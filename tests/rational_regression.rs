@@ -44,18 +44,18 @@ fn default_rational_settings() -> DefaultSettings<T> {
 ///   s.t.   |x[i]| <= 1   for i in {0,1}
 /// Optimum: x* = (-1, 1), obj* = -2.
 ///
-/// Marked `#[ignore]` because rational arithmetic on the IPM iterates
-/// has unbounded denominator growth — even this 2-d LP takes many
-/// minutes per iteration in `--release` mode without inner-loop
-/// precision capping. Run explicitly with:
-///   cargo test --no-default-features --features serde,bigrational \
-///              --test rational_regression rational_lp_box_solves_exactly \
-///              -- --ignored --nocapture
-/// and expect ~10+ minutes.
+/// Runs with `set_max_arena_bits(Some(256))` engaged so per-iteration
+/// rational denominators are bounded at 256 bits ≈ 77 dps. End-to-end
+/// solve takes ~50 ms in --release; iter counts and per-iter
+/// pcost/gap/pres/dres values are bit-identical to the f64 baseline.
+///
+/// A separate test below (`rational_lp_box_solves_exactly_unbounded`)
+/// exercises the unbounded exact mode and is marked `#[ignore]`
+/// because it takes many minutes per iteration.
 #[test]
-#[ignore = "slow: rational denominators blow up; run with --ignored explicitly"]
 fn rational_lp_box_solves_exactly() {
     reset_arena();
+    set_max_arena_bits(Some(256));
 
     let P: CscMatrix<T> = CscMatrix::<T>::zeros((2, 2));
     let q: Vec<T> = vec![rat(1), -rat(1)];
@@ -93,6 +93,51 @@ fn rational_lp_box_solves_exactly() {
         );
     }
 
+    // Both numer and denom are bounded by the cap.
+    for xi in &solver.solution.x {
+        assert!(
+            xi.max_bits() <= 256,
+            "set_max_arena_bits(256) violated: x has {} bits",
+            xi.max_bits()
+        );
+    }
+
+    set_max_arena_bits(None);
+    reset_arena();
+}
+
+/// Same LP, but in unbounded exact mode. Marked `#[ignore]` because
+/// it takes many minutes per IPM iteration as denominators grow
+/// geometrically. Run explicitly with:
+///   cargo test --no-default-features --features serde,bigrational \
+///              --test rational_regression \
+///              rational_lp_box_solves_exactly_unbounded \
+///              -- --ignored --nocapture
+#[test]
+#[ignore = "very slow: unbounded exact-mode rational LP; ~10+ minutes"]
+fn rational_lp_box_solves_exactly_unbounded() {
+    reset_arena();
+    set_max_arena_bits(None);
+
+    let P: CscMatrix<T> = CscMatrix::<T>::zeros((2, 2));
+    let q: Vec<T> = vec![rat(1), -rat(1)];
+    let A = CscMatrix::new(
+        4,
+        2,
+        vec![0, 2, 4],
+        vec![0, 2, 1, 3],
+        vec![rat(1), -rat(1), rat(1), -rat(1)],
+    );
+    let b: Vec<T> = vec![rat(1); 4];
+    let cones = [NonnegativeConeT(4)];
+
+    let mut solver =
+        DefaultSolver::new(&P, &q, &A, &b, &cones, default_rational_settings()).unwrap();
+    solver.solve();
+
+    assert!(matches!(solver.solution.status, SolverStatus::Solved));
+    let obj_f64 = solver.solution.obj_val.to_f64();
+    assert!((obj_f64 + 2.0).abs() < 1e-6);
     reset_arena();
 }
 
