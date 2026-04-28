@@ -178,28 +178,15 @@ fn const_cache() -> ConstCache {
             return c;
         }
     }
-    // Compute fresh at current precision. We need sqrt(2) and pi at
-    // `bits` bits of fractional precision. Use rational approximations:
-    //   sqrt(2) via Newton iteration starting from 3/2
-    //   pi via the Gauss-Legendre AGM iteration
-    // For the initial commit we provide "good enough" rational
-    // approximations that match an f64 round-trip and let the
-    // transcendental module refine them later. PI/SQRT_2 are referenced
-    // only by the SOC packing helper and the exp-cone barrier check
-    // (z < 1 + π), so a 60-bit-accurate approximation is far in excess
-    // of any meaningful solver tolerance.
-    let pi = {
-        // π = 884279719003555 / 281474976710656  (53-bit fraction match for f64::PI)
-        // good to ~16 dps; the f64 round-trip equals std::f64::consts::PI exactly.
-        BigRational::from_f64(std::f64::consts::PI).unwrap_or_else(|| BigRational::one())
-    };
-    let sqrt_2 = {
-        BigRational::from_f64(std::f64::consts::SQRT_2).unwrap_or_else(|| BigRational::one())
-    };
-    let frac_1_sqrt_2 = {
-        BigRational::from_f64(std::f64::consts::FRAC_1_SQRT_2)
-            .unwrap_or_else(|| BigRational::one())
-    };
+    // Compute fresh at current precision.
+    let sqrt_2 = super::transcendental::sqrt_newton_pub(
+        &BigRational::from_i32(2).unwrap(),
+        bits,
+    );
+    let frac_1_sqrt_2 = BigRational::one() / &sqrt_2;
+    // π via Machin's formula: π/4 = 4·arctan(1/5) - arctan(1/239),
+    // using arctan(z) = z - z³/3 + z⁵/5 - … (alternating series; |z|<1).
+    let pi = machin_pi(bits);
     let cache = ConstCache {
         bits,
         generation: gen,
@@ -209,6 +196,52 @@ fn const_cache() -> ConstCache {
     };
     CONST_CACHE.with(|c| c.set(Some(cache)));
     cache
+}
+
+/// arctan(1/n) via the alternating Taylor series. Truncates and rounds
+/// to bounded precision after each term so BigRational coefficients
+/// stay capped at `p+16` bits.
+fn arctan_recip(n: u32, p: u32) -> BigRational {
+    use super::cap::round_to_pow2_denominator;
+    let n_r = BigRational::from_u32(n).unwrap();
+    let z = BigRational::one() / &n_r; // 1/n
+    let z2 = &z * &z;
+    let mut term = z.clone();
+    let mut sum = z;
+    let tol = BigRational::new(BigInt::one(), BigInt::one() << ((p + 4) as usize));
+    let mut k: u64 = 1;
+    let mut sign = -1i32;
+    loop {
+        // term ← term · z²
+        term = round_to_pow2_denominator(&(&term * &z2), p + 16);
+        k += 2;
+        let denom = BigRational::from_u64(k).unwrap();
+        let add = &term / &denom;
+        if sign > 0 {
+            sum = round_to_pow2_denominator(&(&sum + &add), p + 16);
+        } else {
+            sum = round_to_pow2_denominator(&(&sum - &add), p + 16);
+        }
+        sign = -sign;
+        if add.abs() < tol {
+            break;
+        }
+        if k > 50_000 {
+            break; // safety
+        }
+    }
+    sum
+}
+
+/// π via Machin's formula at `p` bits of fractional precision.
+fn machin_pi(p: u32) -> BigRational {
+    use super::cap::round_to_pow2_denominator;
+    let four = BigRational::from_i32(4).unwrap();
+    let a = arctan_recip(5, p + 8);
+    let b = arctan_recip(239, p + 8);
+    let pi_over_4 = &four * &a - &b;
+    let pi = &pi_over_4 * &four;
+    round_to_pow2_denominator(&pi, p)
 }
 
 #[allow(non_snake_case)]

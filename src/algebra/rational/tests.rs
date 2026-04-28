@@ -115,6 +115,53 @@ fn rational_is_floatt() {
 }
 
 #[test]
+fn rational_pi_high_precision_matches_taylor_at_300_bits() {
+    // PI at 300 bits should agree with std::f64::consts::PI to far
+    // beyond f64 ulp (the ulp is ~2^-52, the PI evaluation at 300
+    // bits is good to ~2^-300).
+    reset_arena();
+    set_precision_bits(300);
+    let pi = <RationalReal as RealConst>::PI();
+    let pi_f = pi.to_f64();
+    let err = (pi_f - std::f64::consts::PI).abs();
+    assert!(err < 1e-15, "PI at 300 bits matches f64::PI within ulp; err = {err}");
+
+    // Also: 4 * pi should equal 4*PI (sanity for the const cache /
+    // arena handle path).
+    let four_pi = <RationalReal as RationalReal_helper>::quadruple(pi);
+    assert!(
+        (four_pi.to_f64() - 4.0 * std::f64::consts::PI).abs() < 1e-14,
+        "4*PI sanity"
+    );
+    set_precision_bits(128);
+    reset_arena();
+}
+
+trait RationalReal_helper: Sized {
+    fn quadruple(self) -> Self;
+}
+impl RationalReal_helper for RationalReal {
+    fn quadruple(self) -> Self {
+        self + self + self + self
+    }
+}
+
+#[test]
+fn rational_sqrt_2_high_precision_squared_close_to_2() {
+    // SQRT_2 at 200 bits, squared, should match 2 within 2^-150.
+    reset_arena();
+    set_precision_bits(200);
+    let s = <RationalReal as RealConst>::SQRT_2();
+    let back = s * s;
+    let two = RationalReal::from_i64(2).unwrap();
+    let diff = (back - two).abs();
+    let tol = RationalReal::from_pair(BigInt::one(), BigInt::one() << 150);
+    assert!(diff < tol, "SQRT_2² should match 2 to within 2^-150 at 200-bit precision");
+    set_precision_bits(128);
+    reset_arena();
+}
+
+#[test]
 fn rational_max_bits_grows_with_repeated_division() {
     reset_arena();
     let mut x = RationalReal::from_i64(1).unwrap();

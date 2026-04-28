@@ -41,6 +41,13 @@ fn two() -> BigRational {
 // sqrt: Newton iteration
 // =========================================================
 
+/// Public-in-module shim for use by sibling modules
+/// (`sentinel.rs::const_cache` for SQRT_2 / FRAC_1_SQRT_2).
+#[inline]
+pub(crate) fn sqrt_newton_pub(a: &BigRational, p: u32) -> BigRational {
+    sqrt_newton(a, p)
+}
+
 fn sqrt_newton(a: &BigRational, p: u32) -> BigRational {
     if a.is_zero() {
         return BigRational::zero();
