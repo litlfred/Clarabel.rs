@@ -73,6 +73,7 @@ mod display;
 mod precision;
 mod real;
 mod sentinel;
+mod tighten;
 mod transcendental;
 #[cfg(feature = "serde")]
 mod serde_impl;
@@ -85,6 +86,7 @@ pub use precision::{
     with_precision,
 };
 pub use real::RationalReal;
+pub use tighten::{tighten_scalar, tighten_vec};
 
 // Compile-time assertion: RationalReal satisfies CoreFloatT and (because
 // neither sdp nor faer-sparse can be enabled with bigrational) FloatT.

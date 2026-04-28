@@ -35,7 +35,8 @@ mod rational;
 #[cfg(feature = "bigrational")]
 pub use rational::{
     arena_len, max_arena_bits, precision_bits, reset_arena, set_max_arena_bits,
-    set_precision_bits, with_max_arena_bits, with_precision, RationalReal,
+    set_precision_bits, tighten_scalar, tighten_vec, with_max_arena_bits, with_precision,
+    RationalReal,
 };
 
 // MPFR-backed float backend (feature-gated)
