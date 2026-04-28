@@ -141,6 +141,106 @@ fn rational_lp_box_solves_exactly_unbounded() {
     reset_arena();
 }
 
+/// QP from example_qp.rs:
+///   min  3 x[0]² + 2 x[1]² - x[0] - 4 x[1]
+///   s.t. x[0] - 2 x[1] = 0,  |x[i]| <= 1
+/// Optimum (from f64 baseline): x* ≈ (0.4286, 0.2143), obj* ≈ -0.6429.
+///
+/// Same problem the f64 example_qp.rs solves. Exercises the P ≠ 0
+/// path (rational dot/quad-form/Hessian) plus the ZeroConeT (equality
+/// constraint), neither of which the LP test covered.
+#[test]
+fn rational_qp_solves_under_cap() {
+    reset_arena();
+    set_max_arena_bits(Some(256));
+
+    // P = diag(6, 4). With 1/2 x'Px + q'x convention, this is
+    // 3 x[0]² + 2 x[1]² in the objective.
+    let P = CscMatrix::new(
+        2,
+        2,
+        vec![0, 1, 2],
+        vec![0, 1],
+        vec![rat(6), rat(4)],
+    );
+    let q: Vec<T> = vec![-rat(1), -rat(4)];
+
+    let A = CscMatrix::new(
+        5,
+        2,
+        vec![0, 3, 6],
+        vec![0, 1, 3, 0, 2, 4],
+        vec![rat(1), rat(1), -rat(1), -rat(2), rat(1), -rat(1)],
+    );
+    let b: Vec<T> = vec![rat(0), rat(1), rat(1), rat(1), rat(1)];
+    let cones = [ZeroConeT(1), NonnegativeConeT(4)];
+
+    let mut solver =
+        DefaultSolver::new(&P, &q, &A, &b, &cones, default_rational_settings()).unwrap();
+    solver.solve();
+
+    assert!(matches!(solver.solution.status, SolverStatus::Solved));
+
+    // Check solution against f64 baseline.
+    let x0 = solver.solution.x[0].to_f64();
+    let x1 = solver.solution.x[1].to_f64();
+    let obj = solver.solution.obj_val.to_f64();
+    assert!((x0 - 0.42857143).abs() < 1e-6, "x[0] = {x0}");
+    assert!((x1 - 0.21428571).abs() < 1e-6, "x[1] = {x1}");
+    assert!((obj + 0.64285714).abs() < 1e-6, "obj = {obj}");
+
+    // Equality constraint x[0] - 2 x[1] = 0 should hold exactly (or
+    // within the rounding tolerance of the cap, since A and b are
+    // integers and the cap rounds intermediates).
+    let lhs = solver.solution.x[0] - rat(2) * solver.solution.x[1];
+    let lhs_f = lhs.to_f64();
+    assert!(lhs_f.abs() < 1e-6, "x[0] - 2*x[1] = {lhs_f} (should be ~0)");
+
+    set_max_arena_bits(None);
+    reset_arena();
+}
+
+/// SOCP from example_socp.rs:
+///   min  x[1]²
+///   s.t. (1, -2 x[0], -x[1]) - (0, 0, 0) ∈ K_soc(3),  i.e.
+///        sqrt(4 x[0]² + x[1]²) <= 1.
+///
+/// Optimum (from f64 baseline): x* ≈ (1.0, 1.0), obj* ≈ 1.0.
+/// (The constraint forces |x[0]| <= 1/2 and |x[1]| <= 1, but the
+/// objective drives x[1] to its upper bound; the trace iter-print
+/// shows pcost going through +1.0e+00 at termination.)
+///
+/// Exercises the SOC cone path: SOC margin/residual via
+/// stable_norm (sqrt under the cap), the rank-2 Hessian update, and
+/// equilibration that consults sqrt of column norms — all the
+/// transcendental call sites that were dead in the LP/QP tests.
+#[test]
+fn rational_socp_solves_under_cap() {
+    reset_arena();
+    set_max_arena_bits(Some(256));
+
+    let P = CscMatrix::new(2, 2, vec![0, 0, 1], vec![1], vec![rat(2)]);
+    let q: Vec<T> = vec![rat(0), rat(0)];
+    let A = CscMatrix::from(&[
+        [rat(0), rat(0)],
+        [-rat(2), rat(0)],
+        [rat(0), -rat(1)],
+    ]);
+    let b: Vec<T> = vec![rat(1), -rat(2), -rat(2)];
+    let cones = [SecondOrderConeT(3)];
+
+    let mut solver =
+        DefaultSolver::new(&P, &q, &A, &b, &cones, default_rational_settings()).unwrap();
+    solver.solve();
+
+    assert!(matches!(solver.solution.status, SolverStatus::Solved));
+    let obj = solver.solution.obj_val.to_f64();
+    assert!((obj - 1.0).abs() < 1e-6, "obj = {obj}, expected ~1");
+
+    set_max_arena_bits(None);
+    reset_arena();
+}
+
 /// Check that the exact rational arithmetic guarantee holds for one
 /// known-trivial case: `(1/3) * 3 == 1` exactly. This is impossible
 /// in f64 (1/3 is unrepresentable so 0.333...×3 ≠ 1.0 exactly).
