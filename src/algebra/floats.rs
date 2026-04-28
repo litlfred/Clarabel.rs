@@ -90,13 +90,26 @@ cfg_if::cfg_if! {
         /// A marker trait implemented on types supported by BLAS (i.e. f32 and f64)
         /// when the package is compiled with the "sdp" feature using a BLAS/LAPACK library.
         ///
-        /// Pulls in `NumCast` and `ToPrimitive` because BLAS/SDP code paths use
-        /// `T::from(usize)` and `value.to_i32()` (e.g. for LAPACK workspace sizing
-        /// and SVD truncation tolerances). These bounds are vacuous for the only
-        /// types `BlasFloatT` is implemented on (`f32`, `f64`).
+        /// Pulls in `Copy + NumCast + ToPrimitive`:
+        /// - `Copy` because the SDP code paths (chordal decomposition,
+        ///   dense fixed-size 3x3 eigen/svd, BLAS Cholesky) were written
+        ///   against the original IEEE-only `FloatT: Float` bound and
+        ///   contain hundreds of by-value reads from `Vec<T>` indexes.
+        ///   Adding `Copy` here restores those at exactly the right
+        ///   scope (the trait is impl'd only for f32/f64, both of which
+        ///   are `Copy`) without forcing the cones / algebra layer back
+        ///   to a global `Copy` requirement.
+        /// - `NumCast`/`ToPrimitive` because the BLAS code paths use
+        ///   `T::from(usize)` and `value.to_i32()` (e.g. for LAPACK
+        ///   workspace sizing and SVD truncation tolerances).
+        ///
+        /// All three bounds are vacuous for the only impl types
+        /// (`f32`, `f64`).
         #[doc(hidden)]
-        pub trait MaybeBlasFloatT : BlasFloatT + num_traits::NumCast + num_traits::ToPrimitive {}
-        impl<T> MaybeBlasFloatT for T where T: BlasFloatT + num_traits::NumCast + num_traits::ToPrimitive {}
+        pub trait MaybeBlasFloatT
+            : BlasFloatT + Copy + num_traits::NumCast + num_traits::ToPrimitive {}
+        impl<T> MaybeBlasFloatT for T
+            where T: BlasFloatT + Copy + num_traits::NumCast + num_traits::ToPrimitive {}
     }
     else {
         #[doc(hidden)]
