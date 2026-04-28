@@ -102,6 +102,24 @@ fn rational_lp_box_solves_exactly() {
         );
     }
 
+    // Per-iteration denom-bit trace should be populated (one entry per
+    // IPM iteration). For RationalReal under the cap, max_denom_bits
+    // is bounded by 257 (2^256 has 257 bits — the leading 1 plus 256
+    // trailing zeros — and `cap.rs::round_to_pow2_denominator` always
+    // produces denom = 2^p exactly).
+    let trace = &solver.info.iter_diagnostics;
+    assert!(
+        !trace.is_empty(),
+        "iter_diagnostics should be populated for RationalReal"
+    );
+    for d in trace {
+        assert!(
+            d.max_denom_bits <= 257,
+            "trace denom_bits = {} (cap=256, expected ≤ 257)",
+            d.max_denom_bits
+        );
+    }
+
     set_max_arena_bits(None);
     reset_arena();
 }

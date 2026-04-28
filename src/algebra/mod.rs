@@ -26,7 +26,7 @@ pub use math_traits::*;
 pub use matrix_traits::*;
 pub(crate) use matrix_types::*;
 pub(crate) use scalarmath::*;
-pub use transcendental::{RealConst, RealSentinel, Transcendental};
+pub use transcendental::{BitWidthDiagnostic, RealConst, RealSentinel, Transcendental};
 pub(crate) use utils::*;
 
 // exact-rational backend (feature-gated)

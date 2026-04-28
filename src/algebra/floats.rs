@@ -5,7 +5,7 @@ use std::fmt::{Debug, Display, LowerExp};
 #[cfg(feature = "sdp")]
 use crate::algebra::dense::BlasFloatT;
 
-use super::transcendental::{RealConst, RealSentinel, Transcendental};
+use super::transcendental::{BitWidthDiagnostic, RealConst, RealSentinel, Transcendental};
 
 // Phase 2 of the BigRational backend (deferred):
 // `CoreFloatT` currently still requires `Copy`. The originally-proposed
@@ -54,6 +54,7 @@ pub trait CoreFloatT:
     + Transcendental
     + RealConst
     + RealSentinel
+    + BitWidthDiagnostic
 {
 }
 
@@ -75,6 +76,7 @@ impl<T> CoreFloatT for T where
         + Transcendental
         + RealConst
         + RealSentinel
+        + BitWidthDiagnostic
 {
 }
 

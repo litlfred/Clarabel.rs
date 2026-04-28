@@ -59,8 +59,32 @@ pub struct DefaultInfo<T> {
     /// linear solver information
     pub linsolver: LinearSolverInfo,
 
+    /// Per-iteration trace of (iter, max_numer_bits, max_denom_bits)
+    /// across the primal `x` vector. Populated only on backends with
+    /// arbitrary-precision representations (e.g. `RationalReal`); for
+    /// IEEE floats this stays empty (the underlying
+    /// [`BitWidthDiagnostic`](crate::algebra::transcendental::BitWidthDiagnostic)
+    /// returns `(0, 0)` and we skip the push). Useful for observing
+    /// rational denominator blow-up across an IPM run; QOU uses this
+    /// to predict whether a problem at H_n is tractable a priori.
+    pub iter_diagnostics: Vec<IterDiagnostic>,
+
     // target stream for printing
     pub(crate) stream: PrintTarget,
+}
+
+/// One row of the per-iteration diagnostic trace.
+/// See [`DefaultInfo::iter_diagnostics`].
+#[derive(Default, Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct IterDiagnostic {
+    /// Iteration number at which this row was recorded (matches
+    /// `info.iterations` at the moment of capture).
+    pub iter: u32,
+    /// Maximum numerator bit-length across the primal `x` vector.
+    pub max_numer_bits: u64,
+    /// Maximum denominator bit-length across the primal `x` vector.
+    pub max_denom_bits: u64,
 }
 
 impl<T> DefaultInfo<T>
@@ -181,6 +205,23 @@ where
 
         // solve time so far (includes setup)
         self.solve_time = timers.total_time().as_secs_f64();
+
+        // Per-iteration bit-width trace (only populated when T's
+        // BitWidthDiagnostic returns non-zero values, i.e. on
+        // arbitrary-precision backends like RationalReal).
+        use crate::algebra::BitWidthDiagnostic;
+        let (n_max, d_max) = variables
+            .x
+            .iter()
+            .map(|xi| xi.bit_width())
+            .fold((0u64, 0u64), |a, b| (a.0.max(b.0), a.1.max(b.1)));
+        if n_max != 0 || d_max != 0 {
+            self.iter_diagnostics.push(IterDiagnostic {
+                iter: self.iterations,
+                max_numer_bits: n_max,
+                max_denom_bits: d_max,
+            });
+        }
     }
 
     fn check_termination(

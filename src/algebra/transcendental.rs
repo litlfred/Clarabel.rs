@@ -179,3 +179,27 @@ impl<T: Float> RealSentinel for T {
         Float::max(self, other)
     }
 }
+
+/// Diagnostic helper exposing the bit width of an arbitrary-precision
+/// scalar's internal representation. Used by the solver to record a
+/// per-iteration trace of denominator/mantissa growth (`info.iter_diagnostics`)
+/// when running on backends like `RationalReal` or a future MPFR float.
+///
+/// Default behaviour for IEEE floats: returns `(0, 0)`. The IEEE bit
+/// width is fixed (52 mantissa bits for `f64`) and uninteresting
+/// per-iteration; the diagnostic only adds value when the underlying
+/// representation has variable bit width, in which case the type
+/// provides its own impl returning meaningful values.
+pub trait BitWidthDiagnostic {
+    /// Returns `(numer_bits, denom_bits)` for arbitrary-precision
+    /// rationals (interpreted loosely: `numer_bits` is "value" and
+    /// `denom_bits` is "scale"; an MPFR float would map mantissa/
+    /// exponent into this shape). Returns `(0, 0)` for fixed-width
+    /// IEEE floats — the default.
+    fn bit_width(&self) -> (u64, u64) {
+        (0, 0)
+    }
+}
+
+impl<T: Float> BitWidthDiagnostic for T {}
+

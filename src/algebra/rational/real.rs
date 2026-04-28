@@ -90,6 +90,23 @@ impl RationalReal {
     pub fn max_bits(&self) -> u64 {
         arena::with(self.0, |r| r.numer().bits().max(r.denom().bits()))
     }
+
+    /// `(numer_bits, denom_bits)` separately. The
+    /// [`BitWidthDiagnostic`](crate::algebra::transcendental::BitWidthDiagnostic)
+    /// impl on `RationalReal` forwards here; this method is also useful
+    /// for direct callers who want a finer-grained breakdown.
+    pub fn bit_widths(&self) -> (u64, u64) {
+        arena::with(self.0, |r| (r.numer().bits(), r.denom().bits()))
+    }
+}
+
+impl crate::algebra::transcendental::BitWidthDiagnostic for RationalReal {
+    /// Returns `(numer_bits, denom_bits)` of the underlying
+    /// `BigRational`. Cheap (one `BigInt::bits()` call each).
+    #[inline]
+    fn bit_width(&self) -> (u64, u64) {
+        self.bit_widths()
+    }
 }
 
 // ============================================================
