@@ -80,9 +80,31 @@ fn sqrt_newton(a: &BigRational, p: u32) -> BigRational {
 // ln: argument reduction + Taylor on ln((1+y)/(1-y))
 // =========================================================
 
-/// Cached `ln(2)` at the current thread-local precision. We compute it
-/// on demand via a separate pure-rational evaluation.
+// Per-thread cache of ln(2) at the current working precision.
+// Recomputed only when the precision changes; ln/exp call this on
+// every invocation so caching is a substantial win.
+thread_local! {
+    static LN2_CACHE: std::cell::RefCell<Option<(u32, BigRational)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Cached `ln(2)` at the current thread-local precision. Falls back
+/// to a fresh Taylor-series evaluation when the precision changes.
 fn ln2(p: u32) -> BigRational {
+    LN2_CACHE.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if let Some((cached_p, ref v)) = *slot {
+            if cached_p == p {
+                return v.clone();
+            }
+        }
+        let v = ln2_compute(p);
+        *slot = Some((p, v.clone()));
+        v
+    })
+}
+
+fn ln2_compute(p: u32) -> BigRational {
     // ln(2) = 2 * (y + y³/3 + y⁵/5 + …) with y = (2-1)/(2+1) = 1/3
     let one = BigRational::one();
     let three = BigRational::from_i32(3).unwrap();
@@ -110,11 +132,23 @@ fn ln_rational(a: &BigRational, p: u32) -> BigRational {
         panic!("RationalReal::ln of a non-positive value");
     }
     // Argument reduction: ln(a) = k·ln 2 + ln(m), m = a / 2^k ∈ [1, 2).
-    // Find k = floor(log2(a)).
-    let mut k: i64 = 0;
-    let mut m = a.clone();
+    // Estimate k = floor(log2(a)) ≈ numer.bits() - denom.bits() in
+    // O(1) via BigInt::bits, then refine with at most 1-2 ±1 fixups
+    // (the bit-length estimate is exact for powers of 2 and at most
+    // 1 off otherwise — k is the exponent of the *leading* binary
+    // digit so refinement always converges in ≤2 iterations).
     let two_r = two();
     let one_r = BigRational::one();
+    let mut k: i64 = (a.numer().bits() as i64) - (a.denom().bits() as i64);
+    let mut m = if k > 0 {
+        let pow: BigInt = BigInt::one() << (k as usize);
+        a / BigRational::from(pow)
+    } else if k < 0 {
+        let pow: BigInt = BigInt::one() << ((-k) as usize);
+        a * BigRational::from(pow)
+    } else {
+        a.clone()
+    };
     while m >= two_r {
         m = m / &two_r;
         k += 1;
