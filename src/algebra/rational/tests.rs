@@ -115,6 +115,35 @@ fn rational_is_floatt() {
 }
 
 #[test]
+fn rational_recip_of_zero_is_infinity_not_panic() {
+    // IEEE 1.0/0.0 = +infinity. We match that semantics via the
+    // RealSentinel infinity, rather than panicking on BigRational
+    // divide-by-zero. Solver hot paths (KKT diagonal, equilibration)
+    // depend on this not aborting.
+    reset_arena();
+    let z = RationalReal::zero();
+    let r = z.recip();
+    assert!(<RationalReal as RealSentinel>::is_infinite(r));
+    reset_arena();
+}
+
+#[test]
+fn rational_powf_zero_base_handles_edge_cases() {
+    // 0^positive = 0; 0^0 = 1; 0^negative = nan.
+    reset_arena();
+    let z = RationalReal::zero();
+    let pos = RationalReal::from_i64(2).unwrap();
+    let neg = RationalReal::from_i64(-2).unwrap();
+    let zero_to_pos = z.powf(pos);
+    assert!(zero_to_pos.is_zero());
+    let zero_to_zero = z.powf(z);
+    assert_eq!(zero_to_zero, RationalReal::one());
+    let zero_to_neg = z.powf(neg);
+    assert!(<RationalReal as RealSentinel>::is_nan(zero_to_neg));
+    reset_arena();
+}
+
+#[test]
 fn rational_pi_high_precision_matches_taylor_at_300_bits() {
     // PI at 300 bits should agree with std::f64::consts::PI to far
     // beyond f64 ulp (the ulp is ~2^-52, the PI evaluation at 300

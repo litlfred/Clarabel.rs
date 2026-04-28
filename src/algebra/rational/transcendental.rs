@@ -161,7 +161,25 @@ fn exp_rational(x: &BigRational, p: u32) -> BigRational {
     // Convert k_rat to integer k. Since round_to_precision with p=0 produces
     // m / 1 with m the rounded integer.
     let k_int = k_rat.numer().clone();
-    let k_i64 = k_int.to_i64().unwrap_or(0);
+    // For very large |k|, exp(x) overflows or underflows beyond any
+    // representable rational at the working precision. Saturate to the
+    // ±infinity / zero sentinels rather than silently wrapping at i64
+    // (the previous .unwrap_or(0) returned exp(x) ≈ 1, catastrophically
+    // wrong). Threshold: 2^256 is the magnitude of the +inf sentinel
+    // in sentinel.rs — saturate well before the exponent reaches that.
+    const K_LIMIT: i64 = 1 << 30;
+    let k_i64 = match k_int.to_i64() {
+        Some(k) if k.abs() <= K_LIMIT => k,
+        _ => {
+            // Magnitude of exp(x) is far outside sentinel range.
+            return if k_int.is_positive() {
+                // Match sentinel.rs's +inf magnitude: 2^256.
+                BigRational::new(BigInt::one() << 256u32, BigInt::one())
+            } else {
+                BigRational::zero()
+            };
+        }
+    };
     let k_back = BigRational::from(BigInt::from(k_i64));
     let r = x - &k_back * &ln_2;
     // Taylor: exp(r) = Σ rⁿ/n!
@@ -240,7 +258,18 @@ impl Transcendental for RationalReal {
     }
 
     fn powf(self, n: Self) -> Self {
-        // a^b = exp(b · ln a). Path through ln ⇒ a > 0 required.
+        // a^b = exp(b · ln a). Path through ln ⇒ a > 0 required;
+        // handle the standard mathematical edge cases for a = 0
+        // explicitly (0^b = 0 for b > 0, 1 for b = 0, NaN for b < 0).
+        if self.is_zero() {
+            return if n.is_zero() {
+                Self::one()
+            } else if <Self as num_traits::Signed>::is_positive(&n) {
+                Self::zero()
+            } else {
+                <Self as crate::algebra::transcendental::RealSentinel>::nan()
+            };
+        }
         let p = precision_bits();
         let v = arena::with2(self.0, n.0, |a, b| {
             let log_a = ln_rational(a, p + 8);
@@ -256,6 +285,14 @@ impl Transcendental for RationalReal {
     }
 
     fn recip(self) -> Self {
+        // Match IEEE 1.0 / 0.0 = +infinity rather than panicking on
+        // a BigRational divide-by-zero. The solver uses recip() in
+        // hot paths (KKT diagonal, equilibration) where a transient
+        // zero is meaningful and should propagate as inf via the
+        // sentinel rather than aborting the solve.
+        if self.is_zero() {
+            return <Self as crate::algebra::transcendental::RealSentinel>::infinity();
+        }
         let v = arena::with(self.0, |a| BigRational::one() / a);
         RationalReal::from_bigrational(v)
     }
