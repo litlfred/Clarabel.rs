@@ -259,6 +259,48 @@ fn rational_socp_solves_under_cap() {
     reset_arena();
 }
 
+/// Verify the per-cone accessor metadata on Solution<RationalReal>
+/// matches the user's input cone declarations.
+#[test]
+fn rational_lp_solution_carries_per_cone_specs() {
+    reset_arena();
+    set_max_arena_bits(Some(256));
+
+    let P: CscMatrix<T> = CscMatrix::<T>::zeros((2, 2));
+    let q: Vec<T> = vec![rat(1), -rat(1)];
+    let A = CscMatrix::new(
+        4,
+        2,
+        vec![0, 2, 4],
+        vec![0, 2, 1, 3],
+        vec![rat(1), -rat(1), rat(1), -rat(1)],
+    );
+    let b: Vec<T> = vec![rat(1); 4];
+    let cones = [NonnegativeConeT(4)];
+
+    let mut solver =
+        DefaultSolver::new(&P, &q, &A, &b, &cones, default_rational_settings()).unwrap();
+    solver.solve();
+
+    let specs = &solver.solution.cone_specs;
+    assert_eq!(specs.len(), 1, "one input cone -> one ConeSpec");
+    assert_eq!(specs[0].dim, 4);
+    assert_eq!(specs[0].range, 0..4);
+
+    // dual_block / primal_block return the right slices.
+    let dual = solver.solution.dual_block(0).unwrap();
+    let prim = solver.solution.primal_block(0).unwrap();
+    assert_eq!(dual.len(), 4);
+    assert_eq!(prim.len(), 4);
+
+    // primal_residual_per_block returns one entry, equal to ||s||
+    let resid = solver.solution.primal_residual_per_block();
+    assert_eq!(resid.len(), 1);
+
+    set_max_arena_bits(None);
+    reset_arena();
+}
+
 /// Check that the exact rational arithmetic guarantee holds for one
 /// known-trivial case: `(1/3) * 3 == 1` exactly. This is impossible
 /// in f64 (1/3 is unrepresentable so 0.333...×3 ≠ 1.0 exactly).

@@ -236,8 +236,9 @@ where
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
-pub(crate) enum SupportedConeTag {
+pub enum SupportedConeTag {
     ZeroCone = 0,
     NonnegativeCone,
     SecondOrderCone,
@@ -250,7 +251,7 @@ pub(crate) enum SupportedConeTag {
     BlockDiagPSDCone,
 }
 
-pub(crate) trait SupportedConeAsTag {
+pub trait SupportedConeAsTag {
     fn as_tag(&self) -> SupportedConeTag;
 }
 
