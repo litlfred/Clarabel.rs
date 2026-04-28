@@ -49,6 +49,25 @@ pub enum SupportedConeT<T> {
     /// means that the variable is the upper triangle of an nxn matrix.
     #[cfg(feature = "sdp")]
     PSDTriangleConeT(usize),
+
+    /// A block-diagonal PSD constraint, mathematically equivalent to
+    /// a sequence of independent [`PSDTriangleConeT`](Self::PSDTriangleConeT)s
+    /// of dimensions `block_dims[0]`, `block_dims[1]`, … . Lets users
+    /// declare the structure once instead of pushing N separate cones,
+    /// which is convenient for Wedderburn-block decompositions and
+    /// other structured-PSD use cases.
+    ///
+    /// Internally this is sugar: at solver-construction time it expands
+    /// to one [`PSDTriangleConeT`](Self::PSDTriangleConeT) per block.
+    /// The slack variable for the user's input matches the
+    /// concatenation `triu(B_0) ‖ triu(B_1) ‖ …` in svec form, with
+    /// the same packing convention as `PSDTriangleConeT`.
+    ///
+    /// `block_dims = vec![]` is rejected at validation time;
+    /// `block_dims = vec![n]` is equivalent to a single
+    /// `PSDTriangleConeT(n)` and expanded to that.
+    #[cfg(feature = "sdp")]
+    BlockDiagPSDConeT { block_dims: Vec<usize> },
 }
 
 impl<T> SupportedConeT<T> {
@@ -65,6 +84,10 @@ impl<T> SupportedConeT<T> {
             SupportedConeT::PowerConeT(_) => 3,
             #[cfg(feature = "sdp")]
             SupportedConeT::PSDTriangleConeT(dim) => triangular_number(*dim),
+            #[cfg(feature = "sdp")]
+            SupportedConeT::BlockDiagPSDConeT { block_dims } => {
+                block_dims.iter().map(|d| triangular_number(*d)).sum()
+            }
             SupportedConeT::GenPowerConeT(α, dim2) => α.len() + *dim2,
         }
     }
@@ -89,12 +112,17 @@ pub fn make_cone<T: FloatT>(cone: &SupportedConeT<T>) -> SupportedCone<T> {
         SupportedConeT::ZeroConeT(dim) => ZeroCone::<T>::new(*dim).into(),
         SupportedConeT::SecondOrderConeT(dim) => SecondOrderCone::<T>::new(*dim).into(),
         SupportedConeT::ExponentialConeT() => ExponentialCone::<T>::new().into(),
-        SupportedConeT::PowerConeT(α) => PowerCone::<T>::new(*α).into(),
+        SupportedConeT::PowerConeT(α) => PowerCone::<T>::new(α.clone()).into(),
         SupportedConeT::GenPowerConeT(α, dim2) => {
             GenPowerCone::<T>::new((*α).clone(), *dim2).into()
         }
         #[cfg(feature = "sdp")]
         SupportedConeT::PSDTriangleConeT(dim) => PSDTriangleCone::<T>::new(*dim).into(),
+        #[cfg(feature = "sdp")]
+        SupportedConeT::BlockDiagPSDConeT { .. } => unreachable!(
+            "BlockDiagPSDConeT is sugar; SupportedConeT::new_collapsed should have \
+             expanded it to a sequence of PSDTriangleConeTs before make_cone"
+        ),
     }
 }
 
@@ -151,6 +179,18 @@ where
                         collapse(&mut iter, &mut newcones, *dim)
                     }
 
+                    // BlockDiagPSDConeT is sugar — expand to one
+                    // PSDTriangleConeT per block. Empty blocks are
+                    // skipped (nvars() == 0 for an empty triu).
+                    #[cfg(feature = "sdp")]
+                    SupportedConeT::BlockDiagPSDConeT { block_dims } => {
+                        for &d in block_dims {
+                            if d > 0 {
+                                newcones.push(SupportedConeT::PSDTriangleConeT(d));
+                            }
+                        }
+                    }
+
                     // everything else
                     _ => newcones.push(cone.clone()),
                 }
@@ -196,8 +236,9 @@ where
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[repr(u8)]
-pub(crate) enum SupportedConeTag {
+pub enum SupportedConeTag {
     ZeroCone = 0,
     NonnegativeCone,
     SecondOrderCone,
@@ -206,9 +247,11 @@ pub(crate) enum SupportedConeTag {
     GenPowerCone,
     #[cfg(feature = "sdp")]
     PSDTriangleCone,
+    #[cfg(feature = "sdp")]
+    BlockDiagPSDCone,
 }
 
-pub(crate) trait SupportedConeAsTag {
+pub trait SupportedConeAsTag {
     fn as_tag(&self) -> SupportedConeTag;
 }
 
@@ -223,6 +266,12 @@ impl<T> SupportedConeAsTag for SupportedConeT<T> {
             SupportedConeT::PowerConeT(_) => SupportedConeTag::PowerCone,
             #[cfg(feature = "sdp")]
             SupportedConeT::PSDTriangleConeT(_) => SupportedConeTag::PSDTriangleCone,
+            #[cfg(feature = "sdp")]
+            // BlockDiag is sugar for a sequence of PSDTriangle cones;
+            // expansion happens in `new_collapsed`. The tag here is
+            // only used for printing the user's original cone list,
+            // so keep the dedicated tag string.
+            SupportedConeT::BlockDiagPSDConeT { .. } => SupportedConeTag::BlockDiagPSDCone,
             SupportedConeT::GenPowerConeT(_, _) => SupportedConeTag::GenPowerCone,
         }
     }
@@ -255,6 +304,8 @@ impl SupportedConeTag {
             SupportedConeTag::PowerCone => "PowerCone",
             #[cfg(feature = "sdp")]
             SupportedConeTag::PSDTriangleCone => "PSDTriangleCone",
+            #[cfg(feature = "sdp")]
+            SupportedConeTag::BlockDiagPSDCone => "BlockDiagPSDCone",
             SupportedConeTag::GenPowerCone => "GenPowerCone",
         }
     }
@@ -447,6 +498,65 @@ mod tests {
         ];
         let result = SupportedConeT::new_collapsed(&cones);
 
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(feature = "sdp")]
+    #[test]
+    fn test_block_diag_psd_cone_expands() {
+        // BlockDiagPSDConeT { block_dims: [2, 3, 1] } is sugar for
+        // three independent PSDTriangleConeT entries; the 1-block also
+        // gets the special-case 'PSDTriangleConeT(1) collapses to
+        // NonnegativeConeT' treatment because it follows the standard
+        // collapse logic *after* expansion.
+        //
+        // Total slack count: triu(2x2) + triu(3x3) + triu(1x1) = 3+6+1 = 10.
+        let cones = vec![SupportedConeT::<f64>::BlockDiagPSDConeT {
+            block_dims: vec![2, 3, 1],
+        }];
+        assert_eq!(cones[0].nvars(), 10);
+
+        let result = SupportedConeT::new_collapsed(&cones);
+        // The trailing PSDTriangleConeT(1) becomes NonnegativeConeT(1)
+        // via the existing 1x1-PSD collapse rule.
+        let expected = vec![
+            SupportedConeT::PSDTriangleConeT(2),
+            SupportedConeT::PSDTriangleConeT(3),
+            SupportedConeT::NonnegativeConeT(1),
+        ];
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(feature = "sdp")]
+    #[test]
+    fn test_block_diag_psd_cone_preserves_total_slack() {
+        // BlockDiag should produce the same nvars sum as the
+        // hand-expanded equivalent.
+        let block = SupportedConeT::<f64>::BlockDiagPSDConeT {
+            block_dims: vec![5, 7, 2, 4],
+        };
+        let by_hand = vec![
+            SupportedConeT::<f64>::PSDTriangleConeT(5),
+            SupportedConeT::<f64>::PSDTriangleConeT(7),
+            SupportedConeT::<f64>::PSDTriangleConeT(2),
+            SupportedConeT::<f64>::PSDTriangleConeT(4),
+        ];
+        let by_hand_total: usize = by_hand.iter().map(|c| c.nvars()).sum();
+        assert_eq!(block.nvars(), by_hand_total);
+    }
+
+    #[cfg(feature = "sdp")]
+    #[test]
+    fn test_block_diag_psd_cone_skips_zero_blocks() {
+        let cones = vec![SupportedConeT::<f64>::BlockDiagPSDConeT {
+            block_dims: vec![2, 0, 3, 0, 1],
+        }];
+        let result = SupportedConeT::new_collapsed(&cones);
+        let expected = vec![
+            SupportedConeT::PSDTriangleConeT(2),
+            SupportedConeT::PSDTriangleConeT(3),
+            SupportedConeT::NonnegativeConeT(1),
+        ];
         assert_eq!(result, expected);
     }
 }
