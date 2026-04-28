@@ -88,6 +88,13 @@ faer-sparse = ["dep:faer", "dep:faer-traits"]
 # barrier transcendentals are rounded to a thread-local working precision.
 bigrational = ["dep:num-rational", "dep:num-bigint"]
 
+# Optional GMP/MPFR interop for the bigrational backend, providing
+# bit-exact From<&rug::Rational> conversion into RationalReal. Useful
+# for downstream crates (e.g. QOU's seminormal_mpfr.rs) that already
+# carry MPFR rationals and want to feed them into the solver without
+# routing through f64. Implies `bigrational`.
+rug-interop = ["bigrational", "dep:rug"]
+
 # various pardiso options
 pardiso-panua = ["pardiso-wrapper/panua"]
 pardiso-mkl = ["pardiso-wrapper/mkl"]
@@ -154,6 +161,12 @@ optional = true
 version = "0.4"
 default-features = false
 features = ["serde"]
+optional = true
+
+[dependencies.rug]
+version = "1.24"
+default-features = false
+features = ["rational"]
 optional = true
 
 [dependencies.faer]

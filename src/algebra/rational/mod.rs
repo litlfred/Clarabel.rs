@@ -58,6 +58,8 @@ mod sentinel;
 mod transcendental;
 #[cfg(feature = "serde")]
 mod serde_impl;
+#[cfg(feature = "rug-interop")]
+mod rug_interop;
 
 pub use arena::{arena_len, reset_arena};
 pub use precision::{
